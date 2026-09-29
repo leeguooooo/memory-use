@@ -460,6 +460,32 @@ class SyncTest(unittest.TestCase):
         r = subprocess.run(["git", "commit", "-qm", "leak"], cwd=target, capture_output=True, text=True, env=env)
         self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def install_plugin(self):
+        f = self.home / ".claude" / "plugins" / "installed_plugins.json"
+        f.parent.mkdir(parents=True)
+        f.write_text(json.dumps({"version": 2, "plugins": {"memory-use@leeguooooo-plugins": [{"scope": "user", "version": "0.2.0"}]}}))
+
+    def doctor(self):
+        os.environ["MEMORY_USE_DIR"] = str(self.b)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            mu.main(["doctor"])
+        return buf.getvalue()
+
+    def test_doctor_accepts_claude_plugin_instead_of_link(self):
+        self.install_plugin()
+        mu.ensure_skill_links()
+        self.assertFalse((self.home / ".claude" / "skills" / "memory-use").exists())   # no duplicate
+        out = self.doctor()
+        self.assertIn("OK   skill installed: Claude Code plugin memory-use@leeguooooo-plugins 0.2.0", out)
+        self.assertNotIn("WARN skill installed", out)
+
+    def test_doctor_warns_when_plugin_and_link_both_load(self):
+        self.install_plugin()
+        link = self.home / ".claude" / "skills" / "memory-use"
+        link.parent.mkdir(parents=True); link.symlink_to(mu.TOOL_ROOT)
+        self.assertIn("WARN skill loaded twice", self.doctor())
+
     def test_migrate_reports_unpushed_then_push_fixes_it(self):
         os.environ["MEMORY_USE_DIR"] = str(self.b)
         self.commit(self.b, "b.md", "from b\n")

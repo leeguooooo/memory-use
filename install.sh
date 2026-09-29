@@ -33,7 +33,12 @@ link() {  # link <target> <link-path>; never replaces a real directory
 
 mkdir -p "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.local/bin"
 link "$ROOT" "$HOME/.agents/skills/memory-use"
-link "../../.agents/skills/memory-use" "$HOME/.claude/skills/memory-use"
+# Claude Code plugin installed → it already provides the skill; a second copy would load twice.
+if grep -q '"memory-use@' "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null; then
+  echo "skip: $HOME/.claude/skills/memory-use (Claude Code plugin memory-use already provides the skill)"
+else
+  link "../../.agents/skills/memory-use" "$HOME/.claude/skills/memory-use"
+fi
 [ -d "$HOME/.codex/skills" ] && link "$ROOT" "$HOME/.codex/skills/memory-use"
 chmod +x "$ROOT/scripts/memory_use.py"
 link "$ROOT/scripts/memory_use.py" "$HOME/.local/bin/memory-use"

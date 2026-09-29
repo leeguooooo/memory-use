@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 TOOL_REPO = "leeguooooo/memory-use"
 INSTALL_URL = f"https://raw.githubusercontent.com/{TOOL_REPO}/main/install.sh"
 DEFAULT_NAME = "personal-memory"
@@ -619,6 +619,24 @@ def create_from_template(slug: str, d: Path) -> None:
     print(f"created private repo {slug} from the template")
 
 
+def claude_plugin() -> str | None:
+    """'memory-use@<marketplace> <version>' when Claude Code has memory-use installed as a plugin."""
+    try:
+        plugins = json.loads((Path.home() / ".claude" / "plugins" / "installed_plugins.json").read_text()).get("plugins", {})
+    except (OSError, ValueError, AttributeError):
+        return None
+    for key, installs in plugins.items():
+        if key.startswith("memory-use@"):
+            ver = next((i.get("version") for i in installs if isinstance(i, dict) and i.get("version")), None) \
+                if isinstance(installs, list) else None
+            return f"{key} {ver}" if ver else key
+    return None
+
+
+def claude_skill_link() -> Path:
+    return Path.home() / ".claude" / "skills" / "memory-use"
+
+
 def skill_links() -> list[Path]:
     home = Path.home()
     out = [home / ".agents" / "skills" / "memory-use", home / ".claude" / "skills" / "memory-use"]
@@ -631,7 +649,10 @@ def ensure_skill_links() -> None:
     """Link this checkout into the agents' skill folders; never replaces a real directory or someone else's link."""
     if not (TOOL_ROOT / "SKILL.md").exists():
         return
+    plugin = claude_plugin()
     for link in skill_links():
+        if plugin and link == claude_skill_link():
+            continue    # the Claude Code plugin already provides the skill; a link would load it twice
         if link.is_symlink() and link.resolve() == TOOL_ROOT:
             continue
         if link.exists() or link.is_symlink():
@@ -954,7 +975,14 @@ def cmd_doctor(_a) -> int:
     dirty = [l for l in st[1:] if l.strip()]
     line(not dirty, f"uncommitted changes: {len(dirty)}" + ("" if not dirty else " (may belong to another session)"))
     line(*hook_ok(d))
+    plugin = claude_plugin()
     for link in skill_links():
+        if plugin and link == claude_skill_link():
+            if link.exists() or link.is_symlink():
+                line(False, f"skill loaded twice: Claude Code plugin {plugin} and {link} (remove the link)")
+            else:
+                line(True, f"skill installed: Claude Code plugin {plugin}")
+            continue
         line(link.exists(), f"skill installed: {link}")
     auto = autosync_installed()
     stt = autosync_state()
@@ -1030,9 +1058,9 @@ def cmd_upgrade(a) -> int:
     skills = []
     if (TOOL_ROOT / ".git").exists():
         skills.append({"channel": "git-checkout", "path": str(TOOL_ROOT), "update": f"git -C {TOOL_ROOT} pull --ff-only"})
-    plugins = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
-    if plugins.exists() and '"memory-use@' in plugins.read_text(errors="ignore"):
-        skills.append({"channel": "claude-plugin", "path": str(plugins), "update": "claude plugin update memory-use@leeguooooo-plugins"})
+    plugin = claude_plugin()
+    if plugin:
+        skills.append({"channel": "claude-plugin", "path": plugin, "update": f"claude plugin update {plugin.split()[0]}"})
     avail = bool(latest and vtuple(latest) > vtuple(VERSION))
     if a.json:
         print(json.dumps({"name": "memory-use", "current": VERSION, "latest": latest, "update_available": avail, "skills": skills}))
@@ -1050,7 +1078,7 @@ def cmd_upgrade(a) -> int:
             print(f"-- skill checkout {TOOL_ROOT}: " + ("updated" if not r.returncode else "not updated: " + r.stderr.strip()))
             rc |= 2 if r.returncode else 0
         elif shutil.which("claude"):
-            r = run_quiet(["claude", "plugin", "update", "memory-use@leeguooooo-plugins"])
+            r = run_quiet(["claude", "plugin", "update", s["path"].split()[0]])
             print("-- claude plugin: " + ((r.stdout or r.stderr).strip().splitlines() or ["done"])[-1])
         else:
             print("-- claude plugin: run " + s["update"])
