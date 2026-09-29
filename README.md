@@ -94,6 +94,7 @@ The pre-commit hook (and `save`, and `check`) refuses anything that looks like a
 | `MEMORY_USE_NO_UPDATE_CHECK=1` | silence the once-a-day "new version" line |
 
 Stdlib Python 3.9+, no dependencies. `python3 -m unittest discover -s tests`.
+Release: `scripts/release.sh <version> [notes]` — bumps, tests, tags, publishes, and syncs the plugin marketplace.
 
 ## License
 
