@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 TOOL_REPO = "leeguooooo/memory-use"
 INSTALL_URL = f"https://raw.githubusercontent.com/{TOOL_REPO}/main/install.sh"
 DEFAULT_NAME = "personal-memory"
@@ -142,10 +142,27 @@ class Alias:
         return hash(self.text)
 
 
+def join_phrases(terms: list[str], glossary: list[list[str]]) -> list[str]:
+    """Rejoin words that together form a multi-word alias: ["windows", "电脑"] → ["windows 电脑"]."""
+    known = {a for g in glossary for a in g if " " in a}
+    out, i = [], 0
+    while i < len(terms):
+        for n in (3, 2):
+            phrase = " ".join(terms[i:i + n]).lower()
+            if i + n <= len(terms) and phrase in known:
+                out.append(phrase)
+                i += n
+                break
+        else:
+            out.append(terms[i])
+            i += 1
+    return out
+
+
 def expand(terms: list[str], glossary: list[list[str]]) -> list[set[Alias]]:
     """One alternative-set per query term: the term plus every alias of a glossary concept containing it."""
     out = []
-    for t in terms:
+    for t in join_phrases(terms, glossary):
         t = t.lower()
         alts = {Alias(t, typed=True)}
         for g in glossary:
@@ -193,8 +210,12 @@ def rank(root: Path, terms: list[str], include_archive: bool = False, top: int =
     for c in cs:
         head, body, fname = c["heading"], c["text"], c["file"]
         per = []
+        stem = re.sub(r"\.md$", "", fname)
+        named = False
         for g, d in zip(groups, df):
-            h = 3 * hits(head, g) + 2 * hits(fname, g) + hits(body, g)
+            fh = hits(stem, g)
+            named |= bool(fh)
+            h = 3 * hits(head, g) + 3 * fh + hits(body, g)
             per.append(h * math.log(1 + n / (1 + d)) if h else 0.0)
         if not any(per):
             continue
@@ -202,8 +223,10 @@ def rank(root: Path, terms: list[str], include_archive: bool = False, top: int =
         score = sum(math.log(1 + x) for x in per) * (matched / len(groups)) ** 2
         if c["file"].endswith("todo.md"):
             score *= 0.8
+        if named and " › " not in c["path"]:
+            score *= 2            # a whole article named after the topic beats a section that mentions it
         if c["file"] == "glossary.md":
-            score *= 0.5          # the glossary names everything; it should not crowd out the notes
+            score *= 0.2          # the glossary names everything; it should not crowd out the notes
         c["matched"] = matched
         lines = [(i, l.strip()) for i, l in c["lines"] if any(hits(l, g) for g in groups)][:3]
         scored.append((score, c, lines))
@@ -1059,6 +1082,53 @@ def update_notice() -> None:
         print(f"memory-use {st['latest']} is available (you have {VERSION}). Upgrade: memory-use upgrade", file=sys.stderr)
 
 
+def prompt_mentions(root: Path, prompt: str, limit: int = 3) -> list[str]:
+    """Glossary concepts (by first alias) and section names that a user message mentions."""
+    low = prompt.lower()
+    found: list[str] = []
+    for g in load_glossary(root):
+        for alias in g:
+            if alias.isascii() and len(alias) < 3:
+                continue                      # "mp", "ip": too noisy for a nudge
+            if Alias(alias).count(low) if alias.isascii() else alias in low:
+                if g[0] not in found:
+                    found.append(g[0])
+                break
+    for name, _ in sections(root):
+        if len(name) >= 3 and Alias(name).count(low) and name not in found:
+            found.append(name)
+    return found[:limit]
+
+
+def cmd_hook(a) -> int:
+    """Claude Code hooks. prompt: nudge to recall when the message names something the notes know.
+    session: one line only when the memory is not healthy (no repo, autosync failing). Never fails the host."""
+    try:
+        d = repo_dir()
+        if a.event == "session":
+            if not (d / ".git").exists():
+                print(f"memory-use: notes repo not set up on this computer — offer `memory-use init --repo <owner>/<name>`")
+            else:
+                st = autosync_state()
+                if st and not st.get("ok"):
+                    print(f"memory-use: autosync is stuck ({st.get('result')}); run `memory-use sync` / `doctor` before relying on the notes")
+            return 0
+        raw = sys.stdin.read()
+        try:
+            prompt = json.loads(raw).get("prompt", "") if raw.strip().startswith("{") else raw
+        except ValueError:
+            prompt = raw
+        if not prompt.strip() or not (d / ".git").exists():
+            return 0
+        hits = prompt_mentions(d, prompt)
+        if hits:
+            print(f"memory-use: the notes know about {', '.join(hits)}. Before acting, run "
+                  f"`memory-use brief {' '.join(h.split()[0] for h in hits)}` and read the matching notes.")
+    except Exception:
+        pass
+    return 0
+
+
 def cmd_sync(_a) -> int:
     d = need_repo()
     dirty = git("status", "--porcelain", cwd=d).stdout.strip()
@@ -1179,7 +1249,9 @@ def cmd_brief(a) -> int:
         pts: list[str] = []
         for score, c, lines in [r for r in res if r[1]["file"] != "glossary.md"][:6]:
             emit(f"- {c['file']}:{c['line']} ‹{c['path'] or c['file']}›")
-            if len(shown_points) < 2 and c["file"] not in shown_points and not c["file"].endswith(("README.md", "todo.md")):
+            top_of_file = " › " not in c["path"] or c["line"] <= 3     # key points describe the article, not a mid-file section
+            if (top_of_file and len(shown_points) < 2 and c["file"] not in shown_points
+                    and not c["file"].endswith(("README.md", "todo.md"))):
                 pts = keypoints(d / c["file"])
                 if pts:
                     shown_points.add(c["file"])
@@ -1429,6 +1501,8 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("migrate", help="before leaving this computer: what is not on GitHub yet, and the one-liner for the new one")
     s.add_argument("--push", action="store_true", help="first push local commits (same as one autosync run)")
     s.set_defaults(fn=cmd_migrate)
+    s = sub.add_parser("hook", help="Claude Code hook entry points: prompt (UserPromptSubmit, JSON on stdin) | session (SessionStart)")
+    s.add_argument("event", choices=["prompt", "session"]); s.set_defaults(fn=cmd_hook)
     s = sub.add_parser("upgrade", help="update this skill checkout (and the Claude Code plugin, if installed)")
     s.add_argument("--check", action="store_true"); s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_upgrade)
@@ -1471,7 +1545,7 @@ def main(argv: list[str] | None = None) -> int:
         i = argv.index("--")
         argv, cmd = argv[:i], argv[i + 1:]
     a = p.parse_args(argv)
-    if a.cmd not in ("upgrade", "autosync"):
+    if a.cmd not in ("upgrade", "autosync", "hook"):
         update_notice()
     a.cmd = cmd
     return a.fn(a)

@@ -43,6 +43,22 @@ memory-use new photos "照片" "照片放在哪、怎么备份"
 memory-use lint                # 文章开头格式、README 长度、过期笔记、坏链接
 ```
 
+## 召回钩子
+
+AI 常常想不起先查笔记。Claude Code 插件自带两个钩子（`hooks/hooks.json`）：
+
+- **UserPromptSubmit**：你的话里提到笔记认识的东西（术语表里的任何别名，包括「windows 电脑」这种口语叫法，或者专栏名），AI 会收到一行提示：`the notes know about leo-desktop — 先 memory-use brief leo-desktop`。没提到就什么都不加；约 50 ms，纯标准库。
+- **SessionStart**：只有笔记仓库没接上、或自动同步卡住时才说话。
+
+用 `install.sh` 装、没装插件的话，把下面这段加进 `~/.claude/settings.json`：
+
+```json
+"hooks": {
+  "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "memory-use hook prompt", "timeout": 5}]}],
+  "SessionStart": [{"matcher": "startup", "hooks": [{"type": "command", "command": "memory-use hook session", "timeout": 5}]}]
+}
+```
+
 ## 自动同步
 
 `memory-use autosync on`（`init` 默认打开）每 15 分钟跑一次：macOS 用 launchd，Linux 用 systemd 用户定时器或 cron，Windows 用任务计划程序。

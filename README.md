@@ -43,6 +43,22 @@ memory-use new photos "Photos" "where photos live and how they are backed up"
 memory-use lint                # article headers, README length, stale notes, broken links
 ```
 
+## Recall hook
+
+Agents forget to look things up. The Claude Code plugin ships two hooks (`hooks/hooks.json`):
+
+- **UserPromptSubmit**: when your message names something the notes know (any glossary alias, including colloquial ones like "windows 电脑", or a section name), the agent gets one line: `the notes know about leo-desktop — run memory-use brief leo-desktop first`. Nothing otherwise; ~50 ms, stdlib only.
+- **SessionStart**: silent unless the notes repo is missing or autosync is stuck.
+
+Installed with `install.sh` instead of the plugin? Add the same to `~/.claude/settings.json`:
+
+```json
+"hooks": {
+  "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "memory-use hook prompt", "timeout": 5}]}],
+  "SessionStart": [{"matcher": "startup", "hooks": [{"type": "command", "command": "memory-use hook session", "timeout": 5}]}]
+}
+```
+
 ## Sync
 
 `memory-use autosync on` (default after `init`) runs every 15 minutes via launchd (macOS), a systemd user timer or cron (Linux), or Task Scheduler (Windows):

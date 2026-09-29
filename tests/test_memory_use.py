@@ -178,6 +178,41 @@ class MemoryUseTest(unittest.TestCase):
         rc, out = self.run_cmd("search", "rust")
         self.assertIn("nas/years.md", out)
 
+    def test_multiword_alias_and_filename_rank_the_dedicated_article_first(self):
+        self._glossary("- leo-desktop / windows 电脑 / 台式机 — desk\n")
+        (self.root / "nas" / "leo-desktop.md").write_text(ARTICLE_OK.replace("Lucky 在 443", "账号 A 和 B"))
+        big = "# 客户端\n\n> 更新：2026-09-15 · 状态：在用\n\n**要点**\n- iPhone 用小火箭\n\n## iPhone\n\nx\n\n## 台式机：leo-desktop\n\nwindows chrome 电脑\n"
+        (self.root / "nas" / "clients.md").write_text(big)
+        rc, out = self.run_cmd("search", "windows", "电脑")
+        self.assertIn("nas/leo-desktop.md:1", out.splitlines()[0], out)
+        rc, out = self.run_cmd("brief", "台式机")
+        self.assertNotIn("iPhone 用小火箭", out)          # a mid-file hit does not drag in the file's key points
+
+    def test_prompt_hook_nudges_only_on_known_names(self):
+        self._glossary("- leo-desktop / windows 电脑 / 台式机 — desk\n- mp / moviepilot — media\n")
+        def hook(prompt):
+            sys_stdin = sys.stdin
+            sys.stdin = io.StringIO(json.dumps({"prompt": prompt}))
+            try:
+                return self.run_cmd("hook", "prompt")
+            finally:
+                sys.stdin = sys_stdin
+        rc, out = hook("把 Chrome 登录态同步到 windows 电脑")
+        self.assertEqual(rc, 0)
+        self.assertIn("memory-use brief leo-desktop", out)
+        rc, out = hook("the mp3 file is broken; what about the weather")   # 2-letter alias "mp" is ignored
+        self.assertEqual(out, "")
+        rc, out = hook("check the nas section")                               # section names count too
+        self.assertIn("nas", out)
+
+    def test_session_hook_silent_when_healthy(self):
+        mu.STATE_FILE = Path(self.tmp.name) / "autosync.json"
+        rc, out = self.run_cmd("hook", "session")
+        self.assertEqual((rc, out), (0, ""))
+        mu.STATE_FILE.write_text(json.dumps({"ok": False, "result": "push failed: denied"}))
+        rc, out = self.run_cmd("hook", "session")
+        self.assertIn("autosync is stuck", out)
+
     def test_lint_warns_on_router_ip_alias_only(self):
         self._glossary("- 光猫 / 192.168.1.1 — 办公室光猫\n- 台式机 / 192.168.1.14 — desk\n")
         rc, out = self.run_cmd("lint")

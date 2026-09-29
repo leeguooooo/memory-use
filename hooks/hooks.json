@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/memory_use.py\" hook prompt",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/memory_use.py\" hook session",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -41,6 +41,8 @@ python3 $M migrate [--push]                   # on the OLD computer: what is not
 
 ## Before work (recall)
 
+When a hook line says `memory-use: the notes know about X`, run the suggested `brief` before doing anything else — the notes usually hold the gotcha you are about to rediscover. New nicknames the user uses for a machine or service ("windows 电脑") belong in `glossary.md`, so the hook and search recognise them next time.
+
 1. `brief <topic words>` — one compact pack is usually enough (autosync keeps the checkout current; `sync` if `doctor` says behind). Only then `show` a whole file or `search` for specifics.
 2. Read top-down: root README → section README (key facts, troubleshooting) → an article's **要点 / Key points** → its details. Stop as soon as you have what you need.
 3. A term expands through `glossary.md`, so any alias of a machine or service works. If a search misses because of a new nickname, add it to the glossary.
