@@ -1,0 +1,23 @@
+#!/bin/sh
+# memory-use secret scan: block commits that look like they contain a secret, and personal data
+# from profile-use when that is installed. Installed by `memory_use.py init`.
+ROOT=$(git rev-parse --show-toplevel)
+MU=""
+for c in "$MEMORY_USE_SCRIPT" "$HOME/.agents/skills/memory-use/scripts/memory_use.py" \
+         "$HOME/.claude/skills/memory-use/scripts/memory_use.py" "$HOME/.codex/skills/memory-use/scripts/memory_use.py"; do
+  if [ -n "$c" ] && [ -f "$c" ]; then MU=$c; break; fi
+done
+if [ -z "$MU" ]; then
+  echo "memory-use is not installed, so this commit cannot be scanned for secrets. Install it:"
+  echo "  curl -fsSL https://raw.githubusercontent.com/leeguooooo/memory-use/main/install.sh | sh"
+  exit 1
+fi
+MEMORY_USE_DIR="$ROOT" MEMORY_USE_NO_UPDATE_CHECK=1 python3 "$MU" check --staged || exit 1
+PU="$HOME/.agents/skills/profile-use/scripts/profile_use.py"
+if [ -f "$PU" ]; then
+  # prints only field names and file:line, never values; exits 0 (skipped) when no profile exists here
+  out=$(python3 "$PU" leak-scan --staged --all-profiles 2>&1) || {
+    echo "personal data from profile-use found in staged changes (write a pointer like 'profile-use: <dotpath>' instead):"
+    echo "$out"; exit 1; }
+fi
+exit 0

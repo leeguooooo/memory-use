@@ -1,0 +1,7 @@
+interface:
+  display_name: "Memory"
+  short_description: "Recall and update your portable long-term memory repo (infra, NAS, VPN, setup notes)."
+  default_prompt: "Use $memory-use to check what we already know about this in my memory repo, and write back anything worth keeping when we are done."
+
+policy:
+  allow_implicit_invocation: true
