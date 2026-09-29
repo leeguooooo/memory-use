@@ -1387,11 +1387,14 @@ def cmd_save(a) -> int:
     if c.returncode:
         print(c.stderr or c.stdout)
         return c.returncode
-    dirty = git("status", "--porcelain", cwd=d).stdout.strip()
-    pull = git("pull", "-q", "--rebase", *(["--autostash"] if dirty else []), cwd=d, check=False)
-    if pull.returncode:
-        print("committed locally, but pull --rebase failed:\n" + (pull.stderr or pull.stdout))
-        return pull.returncode
+    git("fetch", "-q", cwd=d, check=False)
+    behind = git("rev-list", "--count", "HEAD..@{u}", cwd=d, check=False).stdout.strip()
+    if behind not in ("", "0"):   # only then: autostash does not restore what other sessions had staged
+        dirty = git("status", "--porcelain", cwd=d).stdout.strip()
+        pull = git("pull", "-q", "--rebase", *(["--autostash"] if dirty else []), cwd=d, check=False)
+        if pull.returncode:
+            print("committed locally, but pull --rebase failed:\n" + (pull.stderr or pull.stdout))
+            return pull.returncode
     push = git("push", "-q", cwd=d, check=False)
     if push.returncode:
         print("committed locally, push failed:\n" + (push.stderr or push.stdout))
