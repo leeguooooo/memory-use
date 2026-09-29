@@ -1361,18 +1361,29 @@ def cmd_save(a) -> int:
     d = need_repo()
     if not a.paths:
         sys.exit("save needs explicit paths (never `git add -A`: other sessions may have uncommitted work here)")
-    git("add", "--", *a.paths, cwd=d)
+    staged_del = set(git("diff", "--cached", "--name-only", "--diff-filter=D", cwd=d).stdout.split("\n"))
+    to_add = []
+    for path in a.paths:
+        if (d / path).exists() or git("ls-files", "--", path, cwd=d).stdout.strip():
+            to_add.append(path)
+        elif not any(f == path or f.startswith(path.rstrip("/") + "/") for f in staged_del):
+            sys.exit(f"no such path: {path}")
+    if to_add:
+        add = git("add", "-A", "--", *to_add, cwd=d, check=False)      # -A: deletions under the paths too
+        if add.returncode:
+            sys.exit("git add failed: " + add.stderr.strip())
     known = load_known_secrets()
     problems = [f"{name}:{n}: {what}" for name, text in staged_blobs(d) for n, what in scan_text(text, known)]
     if problems:
-        git("reset", "-q", "--", *a.paths, cwd=d)
+        if to_add:
+            git("reset", "-q", "--", *to_add, cwd=d, check=False)
         print("refusing to commit, possible secrets:\n" + "\n".join("  " + p for p in problems))
         return 1
-    if not git("diff", "--cached", "--name-only", cwd=d).stdout.strip():
+    if not git("diff", "--cached", "--name-only", "--", *a.paths, cwd=d).stdout.strip():
         print("nothing to commit for those paths")
         return 0
     msg = a.message + (f"\n\n{a.trailer}" if a.trailer else "")
-    c = git("commit", "-q", "-m", msg, cwd=d, check=False)
+    c = git("commit", "-q", "-m", msg, "--", *a.paths, cwd=d, check=False)   # only these paths, never others' staged work
     if c.returncode:
         print(c.stderr or c.stdout)
         return c.returncode

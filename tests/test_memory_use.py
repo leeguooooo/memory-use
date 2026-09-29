@@ -208,6 +208,16 @@ class MemoryUseTest(unittest.TestCase):
         self.assertLess(agents.index("`home/`"), agents.index("## Other"))
         self.assertIn("## Key facts", (self.root / "home" / "README.md").read_text())
 
+    def test_save_commits_a_deleted_directory(self):
+        bare = Path(self.tmp.name) / "r.git"
+        sh("git", "clone", "-q", "--bare", str(self.root), str(bare), cwd=self.root)
+        sh("git", "remote", "add", "origin", str(bare), cwd=self.root)
+        sh("git", "push", "-q", "-u", "origin", "HEAD", cwd=self.root)
+        sh("git", "rm", "-rq", "nas", cwd=self.root)
+        rc, out = self.run_cmd("save", "nas", "-m", "drop nas")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("pushed", out)
+
     def test_save_requires_paths(self):
         rc, _ = self.run_cmd("save", "-m", "x")
         self.assertNotEqual(rc, 0)
