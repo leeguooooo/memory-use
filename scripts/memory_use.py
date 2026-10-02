@@ -647,8 +647,8 @@ def skill_links() -> list[Path]:
 
 def ensure_skill_links() -> None:
     """Link this checkout into the agents' skill folders; never replaces a real directory or someone else's link."""
-    if not (TOOL_ROOT / "SKILL.md").exists():
-        return
+    if not (TOOL_ROOT / "SKILL.md").exists() or os.environ.get("MEMORY_USE_NO_SKILL_LINKS"):
+        return    # installed as a plugin: the host already loads the skill
     plugin = claude_plugin()
     for link in skill_links():
         if plugin and link == claude_skill_link():

@@ -1,0 +1,60 @@
+{
+  "name": "memory-use",
+  "version": "1.0.0",
+  "description": "Long-term memory you own: Markdown notes in your private git repo that your assistant reads before work and updates after it.",
+  "author": {
+    "name": "Guo Li",
+    "email": "leeguooooo@gmail.com",
+    "url": "https://github.com/leeguooooo"
+  },
+  "homepage": "https://github.com/leeguooooo/memory-use",
+  "repository": "https://github.com/leeguooooo/memory-use",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "notes",
+    "git",
+    "markdown",
+    "infrastructure",
+    "homelab"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "memory-use",
+    "shortDescription": "Your notes repo as AI memory",
+    "longDescription": "memory-use turns a private git repository of Markdown notes into long-term memory that you own. Before working on your servers, NAS, VPN, network or computer setup, the assistant pulls a short brief of what your notes already say, so it does not rediscover the same gotchas. After the work, it writes back new hosts, ports, decisions, workarounds and rollback steps in a consistent format, and commits them to your repository.\n\nThe notes are plain Markdown you can read and edit yourself, versioned in git, and portable across assistants and computers. A built-in secret scan blocks commits that contain passwords, private keys or API tokens, so notes record where secrets live, never the secrets themselves.\n\nWho it is for: people who run their own servers, home labs or developer machines and want their assistant to remember how things were set up.\n\nRequirements and limits: needs git and Python 3.9 or newer on the computer doing the work, plus access to your notes repository (for a private GitHub repo, a signed-in GitHub CLI or git credential). It works on a connected computer or any environment where those are available. Creating a new repository or enabling background sync happens only when you ask. memory-use has no server and sends your notes only to the git remote you choose.",
+    "developerName": "Guo Li",
+    "category": "Productivity",
+    "capabilities": [
+      "Search notes",
+      "Summarize notes on a topic",
+      "Write and update notes",
+      "Scan notes for secrets",
+      "Sync with git"
+    ],
+    "websiteURL": "https://github.com/leeguooooo/memory-use",
+    "supportURL": "https://github.com/leeguooooo/memory-use/issues",
+    "privacyPolicyURL": "https://github.com/leeguooooo/memory-use/blob/main/PRIVACY.md",
+    "defaultPrompt": [
+      "What do my notes say about the NAS backup setup?",
+      "Write down the VPN change we just made, with how to roll it back.",
+      "Set up memory-use with my notes repo."
+    ],
+    "brandColor": "#1F6F5C",
+    "composerIcon": "./assets/logo.png",
+    "logo": "./assets/logo.png"
+  },
+  "extensions": {
+    "com.openai": {
+      "publication": {
+        "release_notes": "First directory release: skill and bundled stdlib-only helper for recalling, writing and secret-scanning notes in your own git repository.",
+        "translations": {
+          "zh-CN": {
+            "subtitle": "用你的笔记仓库当 AI 记忆",
+            "description": "memory-use 把你自己的私有 git 笔记仓库（Markdown）变成助手的长期记忆。动服务器、NAS、VPN、网络或新电脑配置之前，助手先从笔记里拿一份摘要；做完后把新的主机、端口、决策、坑和回滚方法按统一格式写回去并提交。笔记是你能直接读写的 Markdown，有 git 版本记录，跨助手、跨电脑通用。内置密钥扫描，含密码、私钥或 token 的提交会被拦下。需要运行环境里有 git、Python 3.9+，并能访问你的笔记仓库。memory-use 没有服务器，笔记只会推送到你指定的 git 远端。"
+          }
+        }
+      }
+    }
+  }
+}
