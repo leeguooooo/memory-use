@@ -43,6 +43,8 @@ memory-use new photos "Photos" "where photos live and how they are backed up"
 memory-use lint                # article headers, README length, stale notes, broken links
 ```
 
+For a focused topic, `brief` keeps at most two chunks per note, drops weak matches, and includes only matching todos, summary lines, and commit subjects. A section name or its alias alone (`brief nas` / `brief pan`), or no topic, retains the section overview. `--max 1500` caps the context body including its truncation notice (minimum 128 characters). Repeating a term or its synonyms does not change its weight; `#` inside Markdown code fences is not a heading.
+
 ## Recall hook
 
 Agents forget to look things up. The Claude Code plugin ships two hooks (`hooks/hooks.json`):

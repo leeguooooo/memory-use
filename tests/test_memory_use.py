@@ -257,6 +257,79 @@ class MemoryUseTest(unittest.TestCase):
         rc, _ = self.run_cmd("save", "-m", "x")
         self.assertNotEqual(rc, 0)
 
+    def test_repeated_terms_and_synonyms_do_not_change_rank(self):
+        def ranking(terms):
+            return [(score, c['file'], c['line']) for score, c, _ in mu.rank(self.root, terms)]
+        self.assertEqual(ranking(['nas']), ranking(['nas', 'nas', '群晖']))
+
+    def test_known_ascii_alias_does_not_match_unrelated_word(self):
+        (self.root / 'space.md').write_text('# NASA\n\nspace agency\n')
+        rc, out = self.run_cmd('search', 'nas', '--limit', '50')
+        self.assertEqual(rc, 0)
+        self.assertNotIn('] space.md:', out)
+
+    def test_code_fences_do_not_create_fake_headings(self):
+        p = self.root / 'nas' / 'commands.md'
+        p.write_text('# Commands\n\n```sh\n# fake title\necho hello\n```\n\n'
+                     '## Real heading\n\n~~~~python\n## also fake\n~~~\n~~~~\n\nlast line\n')
+        cs = [c for c in mu.chunks(self.root) if c['file'] == 'nas/commands.md']
+        self.assertEqual([c['heading'] for c in cs], ['Commands', 'Real heading'])
+        self.assertIn('# fake title', cs[0]['text'])
+        self.assertIn('last line', cs[1]['text'])
+
+    def test_focused_brief_filters_unrelated_todos_and_summary(self):
+        (self.root / 'nas' / 'todo.md').write_text('# todo\n\n- [ ] Lucky certificate renewal\n- [ ] unrelated backup\n')
+        (self.root / 'nas' / 'README.md').write_text('# NAS\n\n## Key facts\n\n- Lucky port 443\n- unrelated backup config\n')
+        rc, out = self.run_cmd('brief', 'lucky')
+        self.assertEqual(rc, 0)
+        self.assertIn('Lucky certificate renewal', out)
+        self.assertIn('Lucky port 443', out)
+        self.assertNotIn('unrelated backup', out)
+        rc, out = self.run_cmd('brief', 'nas')
+        self.assertIn('unrelated backup', out)
+
+    def test_weak_unshown_match_does_not_pull_in_section(self):
+        (self.root / 'root-topic.md').write_text('# RootTopic\n\n' + 'RootTopic instructions\n' * 12)
+        with (self.root / 'nas' / 'office.md').open('a') as f:
+            f.write('\nRootTopic mentioned incidentally\n')
+        rc, out = self.run_cmd('brief', 'RootTopic')
+        self.assertEqual(rc, 0)
+        self.assertNotIn('## nas/README.md', out)
+        self.assertNotIn('open todo', out)
+
+    def test_brief_caps_chunks_per_file(self):
+        p = self.root / 'nas' / 'dedicated.md'
+        p.write_text('# Dedicated\n\n' + '\n'.join(f'## Dedicated {i}\n\nDedicated text\n' for i in range(10)))
+        (self.root / 'nas' / 'other.md').write_text('# Dedicated reference\n\nDedicated text\n')
+        rc, out = self.run_cmd('brief', 'dedicated')
+        self.assertEqual(rc, 0)
+        self.assertLessEqual(out.count('- nas/dedicated.md:'), 2)
+        self.assertIn('- nas/other.md:', out)
+
+    def test_brief_no_match_has_no_unrelated_history(self):
+        rc, out = self.run_cmd('brief', 'unknown-zzzz')
+        self.assertEqual(rc, 1)
+        self.assertIn('no match', out)
+        self.assertNotIn('recent changes', out)
+
+    def test_brief_character_limit_includes_truncation_notice(self):
+        _, full = self.run_cmd('brief', 'nas')
+        for limit in (128, 300, 900):
+            rc, out = self.run_cmd('brief', 'nas', '--max', str(limit))
+            self.assertEqual(rc, 0)
+            self.assertLessEqual(len(out.rstrip('\n')), limit)
+            if len(full.rstrip('\n')) > limit:
+                self.assertIn('truncated', out)
+            else:
+                self.assertNotIn('truncated', out)
+
+    def test_focused_brief_filters_unrelated_commit_subjects(self):
+        (self.root / 'nas' / 'lucky.md').write_text(ARTICLE_OK + '\nminor change\n')
+        sh('git', 'add', 'nas/lucky.md', cwd=self.root)
+        sh('git', 'commit', '-qm', 'unrelated project label', cwd=self.root)
+        rc, out = self.run_cmd('brief', 'lucky')
+        self.assertNotIn('unrelated project label', out)
+
 
 FAKE_BWU = """#!/bin/sh
 # fake bitwarden-use for tests

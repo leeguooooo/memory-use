@@ -164,11 +164,11 @@ def expand(terms: list[str], glossary: list[list[str]]) -> list[set[Alias]]:
     out = []
     for t in join_phrases(terms, glossary):
         t = t.lower()
-        alts = {Alias(t, typed=True)}
-        for g in glossary:
-            if t in g:
-                alts.update(Alias(a) for a in g if a != t)
-        out.append(alts)
+        concepts = [g for g in glossary if t in g]
+        alts = {Alias(a) for g in concepts for a in g} if concepts else {Alias(t, typed=True)}
+        # Repeating a term or two names of the same concept must not change its weight.
+        if alts not in out:
+            out.append(alts)
     return out
 
 
@@ -184,8 +184,18 @@ def chunks(root: Path, include_archive: bool = False) -> list[dict]:
         rel = str(p.relative_to(root))
         trail: list[str] = []
         cur = {"file": rel, "line": 1, "path": "", "heading": "", "lines": []}
+        fence = None
         for i, line in enumerate(p.read_text(errors="ignore").splitlines(), 1):
-            m = re.match(r"^(#{1,4})\s+(.*)", line)
+            marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+            if marker:
+                token, tail = marker.groups()
+                if fence is None:
+                    fence = (token[0], len(token))
+                elif token[0] == fence[0] and len(token) >= fence[1] and not tail.strip():
+                    fence = None
+                cur["lines"].append((i, line))
+                continue
+            m = re.match(r"^(#{1,4})\s+(.*)", line) if fence is None else None
             if m:
                 if cur["lines"] or cur["heading"]:
                     out.append(cur)
@@ -203,19 +213,20 @@ def chunks(root: Path, include_archive: bool = False) -> list[dict]:
 def rank(root: Path, terms: list[str], include_archive: bool = False, top: int = 8) -> list[tuple[float, dict, list[tuple[int, str]]]]:
     glossary = load_glossary(root)
     groups = expand(terms, glossary)
+    if not groups:
+        return []
     cs = chunks(root, include_archive)
     n = len(cs) or 1
-    df = [sum(1 for c in cs if hits(c["heading"] + "\n" + c["text"], g)) for g in groups]
+    counts = [[(hits(c["heading"], g), hits(c["text"], g),
+                hits(re.sub(r"\.md$", "", c["file"]), g)) for g in groups] for c in cs]
+    df = [sum(bool(row[i][0] or row[i][1]) for row in counts) for i in range(len(groups))]
     scored = []
-    for c in cs:
-        head, body, fname = c["heading"], c["text"], c["file"]
+    for c, row in zip(cs, counts):
         per = []
-        stem = re.sub(r"\.md$", "", fname)
         named = False
-        for g, d in zip(groups, df):
-            fh = hits(stem, g)
+        for (hh, bh, fh), d in zip(row, df):
             named |= bool(fh)
-            h = 3 * hits(head, g) + 3 * fh + hits(body, g)
+            h = 3 * hh + 3 * fh + bh
             per.append(h * math.log(1 + n / (1 + d)) if h else 0.0)
         if not any(per):
             continue
@@ -1216,7 +1227,7 @@ SUMMARY_HEADINGS = re.compile(r"^##\s+(关键事实|一句话|概要|出问题�
 KEYPOINTS = re.compile(r"^(\*\*(要点|Key points|TL;DR)\*\*|##\s+(要点|Key points|TL;DR))", re.I)
 
 
-def readme_summary(text: str, max_lines: int) -> str:
+def readme_summary(text: str, max_lines: int, groups: list[set[Alias]] | None = None) -> str:
     """The intro plus the summary sections (key facts, troubleshooting) of a section README, capped."""
     out, keep = [], True
     for line in text.splitlines():
@@ -1224,6 +1235,16 @@ def readme_summary(text: str, max_lines: int) -> str:
             keep = bool(SUMMARY_HEADINGS.match(line))
         if keep and line.strip():
             out.append(line)
+    if groups is not None:
+        relevant, heading = [], None
+        for line in out:
+            if line.startswith("#"):
+                heading = line
+            elif any(hits(line, g) for g in groups):
+                if heading and heading not in relevant:
+                    relevant.append(heading)
+                relevant.append(line)
+        out = relevant
     if len(out) > max_lines:
         out = out[:max_lines] + ["…"]
     return "\n".join(out)
@@ -1244,15 +1265,44 @@ def keypoints(path: Path, max_lines: int = 6) -> list[str]:
     return []
 
 
+def brief_matches(results: list, limit: int = 6) -> list:
+    """Keep strong hits while allowing more than one file to contribute to the brief."""
+    notes = [r for r in results if r[1]["file"] != "glossary.md"]
+    if not notes:
+        return results[:1]
+    threshold = notes[0][0] * 0.25
+    selected, counts = [], {}
+    for result in notes:
+        score, chunk, _ = result
+        file = chunk["file"]
+        if score < threshold or counts.get(file, 0) >= 2:
+            continue
+        selected.append(result)
+        counts[file] = counts.get(file, 0) + 1
+        if len(selected) >= limit:
+            break
+    return selected
+
+
 def cmd_brief(a) -> int:
     """Context pack for a topic, most useful first: best matching notes (with their key points), open todos,
     trimmed section summaries, recent changes. Truncation drops from the end, so the matches survive."""
     d = need_repo()
+    if a.max < 128 or a.readme_lines < 1:
+        sys.exit("--max must be at least 128 and --readme-lines must be positive")
     secs = [n for n, _ in sections(d)]
     glossary = load_glossary(d)
     wanted = [t.lower() for t in a.topic]
-    res = rank(d, a.topic, top=12) if a.topic else []
+    groups = expand(a.topic, glossary) if a.topic else []
+    res = brief_matches(rank(d, a.topic, top=48)) if a.topic else []
+    if a.topic and not res:
+        print("no match — try fewer words, or an alias (see glossary.md)")
+        return 1
+    # A section name or its glossary alias alone asks for the whole section.
+    broad_sections = [s for s in secs if len(groups) == 1 and any(x.text == s for x in groups[0])]
+    broad = not a.topic or bool(broad_sections)
     chosen = [s for s in secs if s in wanted]
+    chosen += [s for s in broad_sections if s not in chosen]
     if res:
         top = res[0][0]
         for score, c, _l in res:
@@ -1260,39 +1310,41 @@ def cmd_brief(a) -> int:
             # a section joins only through a strong, non-README match (a README that merely mentions
             # one alias, e.g. "mac mini" in the NAS README, does not pull the whole section in)
             if (s in secs and s not in chosen and len(chosen) < 2 and not c["file"].endswith("README.md")
-                    and score >= 0.5 * top):
+                    and score >= 0.5 * top and any(hits(c["heading"] + "\n" + c["file"], g) for g in groups)):
                 chosen.append(s)
     if not a.topic:
         chosen = secs
     out: list[str] = []
     emit = out.append
     emit(f"# brief: {' '.join(a.topic) or '(all)'}  — {dt.date.today().isoformat()}, repo {git('log', '-1', '--format=%h %ad', '--date=short', cwd=d).stdout.strip()}")
-    groups = expand(a.topic, glossary) if a.topic else []
     aliases = sorted({x.text for g in groups for x in g} - set(wanted))
     if aliases:
         emit(f"aliases: {', '.join(aliases[:12])}")
     if res:
         emit("\n## best matching notes")
         shown_points: set[str] = set()
-        pts: list[str] = []
-        for score, c, lines in [r for r in res if r[1]["file"] != "glossary.md"][:6]:
+        points: dict[str, list[str]] = {}
+        for score, c, lines in res:
             emit(f"- {c['file']}:{c['line']} ‹{c['path'] or c['file']}›")
             top_of_file = " › " not in c["path"] or c["line"] <= 3     # key points describe the article, not a mid-file section
             if (top_of_file and len(shown_points) < 2 and c["file"] not in shown_points
                     and not c["file"].endswith(("README.md", "todo.md"))):
-                pts = keypoints(d / c["file"])
+                pts = points.setdefault(c["file"], keypoints(d / c["file"]))
                 if pts:
                     shown_points.add(c["file"])
                     emit("    要点/key points:")
                     emit("\n".join("    " + x.strip() for x in pts))
-            shown = {x.strip() for x in pts} if c["file"] in shown_points else set()
+            shown = {x.strip() for x in points.get(c["file"], [])} if c["file"] in shown_points else set()
             for i, l in [x for x in lines if x[1] not in shown][:2]:
                 emit(f"    {i}: {l[:160]}")
     todos = []
     for s in chosen:
         f = d / s / "todo.md"
         if f.exists():
-            todos += [f"- {s}: {l.strip()[6:][:140]}" for l in f.read_text().splitlines() if re.match(r"^\s*- \[ \]", l)]
+            for line in f.read_text().splitlines():
+                item = re.match(r"^\s*- \[ \]\s*(.*)", line)
+                if item and (broad or any(hits(item[1], g) for g in groups)):
+                    todos.append(f"- {s}: {item[1][:140]}")
     if todos:
         emit(f"\n## open todo ({len(todos)})")
         emit("\n".join(todos[:10]) + ("\n…" if len(todos) > 10 else ""))
@@ -1300,14 +1352,21 @@ def cmd_brief(a) -> int:
         readme = d / s / "README.md"
         if readme.exists():
             emit(f"\n## {s}/README.md (summary; full: `show {s}`)")
-            emit(readme_summary(readme.read_text(), a.readme_lines))
-    log = git("log", "-6", "--date=short", "--pretty=format:- %ad %s", "--", *chosen, cwd=d, check=False).stdout.strip()
+            summary = readme_summary(readme.read_text(), a.readme_lines, None if broad else groups)
+            if summary:
+                emit(summary)
+    history_paths = chosen if broad else sorted({c["file"] for _, c, _ in res})
+    log = git("log", "-6" if broad else "-48", "--date=short", "--pretty=format:- %ad %s", "--", *history_paths, cwd=d, check=False).stdout.strip()
+    if not broad:
+        log = "\n".join([line for line in log.splitlines() if any(hits(line, g) for g in groups)][:6])
     if log:
         emit("\n## recent changes")
         emit(log)
     text = "\n".join(out)
     if len(text) > a.max:
-        text = text[: a.max].rsplit("\n", 1)[0] + f"\n…(truncated at {a.max} chars; use show/search for more)"
+        suffix = f"\n…(truncated at {a.max} chars; use show/search for more)"
+        prefix = text[:a.max - len(suffix)]
+        text = (prefix.rsplit("\n", 1)[0] if "\n" in prefix else prefix) + suffix
     print(text)
     return 0
 
