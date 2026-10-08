@@ -572,5 +572,40 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(rc, 0)
 
 
+class ProfileLeakHookTest(unittest.TestCase):
+    """The pre-commit hook reads profile-use leak-scan's exit code: 0 clean, 1 leak, 2 skipped."""
+
+    def commit_with_leak_scan_exit(self, code):
+        with tempfile.TemporaryDirectory() as tmp:
+            home, repo = Path(tmp) / "home", Path(tmp) / "repo"
+            pu = home / ".agents" / "skills" / "profile-use" / "scripts" / "profile_use.py"
+            pu.parent.mkdir(parents=True)
+            pu.write_text(f"import sys\nprint('{{\"clean\": true}}')\nsys.exit({code})\n")
+            repo.mkdir()
+            sh("git", "init", "-q", cwd=repo)
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            hook.write_text((mu.TOOL_ROOT / "template" / ".githooks" / "pre-commit").read_text())
+            hook.chmod(0o755)
+            (repo / "note.md").write_text("# note\n")
+            sh("git", "add", "note.md", cwd=repo)
+            env = {**os.environ, "HOME": str(home), "MEMORY_USE_SCRIPT": str(Path(mu.__file__).resolve())}
+            return subprocess.run(["git", "commit", "-qm", "note"], cwd=repo, capture_output=True, text=True, env=env)
+
+    def test_clean_and_skipped_commit(self):
+        for code in (0, 2):
+            r = self.commit_with_leak_scan_exit(code)
+            self.assertEqual(r.returncode, 0, f"exit {code}: {r.stdout}{r.stderr}")
+
+    def test_leak_blocks_commit(self):
+        r = self.commit_with_leak_scan_exit(1)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("personal data from profile-use found", r.stdout + r.stderr)
+
+    def test_scan_error_blocks_commit(self):
+        r = self.commit_with_leak_scan_exit(3)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("leak-scan failed (exit 3)", r.stdout + r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
