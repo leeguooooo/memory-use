@@ -575,12 +575,12 @@ class SyncTest(unittest.TestCase):
 class ProfileLeakHookTest(unittest.TestCase):
     """The pre-commit hook reads profile-use leak-scan's exit code: 0 clean, 1 leak, 2 skipped."""
 
-    def commit_with_leak_scan_exit(self, code):
+    def commit_with_leak_scan_exit(self, code, output='{"clean": true, "skipped": "no profile found"}'):
         with tempfile.TemporaryDirectory() as tmp:
             home, repo = Path(tmp) / "home", Path(tmp) / "repo"
             pu = home / ".agents" / "skills" / "profile-use" / "scripts" / "profile_use.py"
             pu.parent.mkdir(parents=True)
-            pu.write_text(f"import sys\nprint('{{\"clean\": true}}')\nsys.exit({code})\n")
+            pu.write_text(f"import sys\nprint({output!r})\nsys.exit({code})\n")
             repo.mkdir()
             sh("git", "init", "-q", cwd=repo)
             hook = repo / ".git" / "hooks" / "pre-commit"
@@ -600,6 +600,12 @@ class ProfileLeakHookTest(unittest.TestCase):
         r = self.commit_with_leak_scan_exit(1)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("personal data from profile-use found", r.stdout + r.stderr)
+
+    def test_usage_error_exit_2_blocks_commit(self):
+        # argparse exits 2 too (e.g. an old profile-use without --all-profiles); that is not "skipped"
+        r = self.commit_with_leak_scan_exit(2, "usage: profile_use.py: error: unrecognized arguments")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("leak-scan failed (exit 2)", r.stdout + r.stderr)
 
     def test_scan_error_blocks_commit(self):
         r = self.commit_with_leak_scan_exit(3)
