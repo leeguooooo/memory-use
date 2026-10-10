@@ -365,6 +365,16 @@ def bwu(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run([b, *args], input=stdin, text=True, capture_output=True)
 
 
+def bwu_confirmed(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
+    """A vault write the user already asked for (`secret put`). bitwarden-use 0.9+
+    refuses writes without --yes ("confirmation required"); older releases don't
+    know the flag, so retry without it there."""
+    r = bwu(*args, "--yes", stdin=stdin)
+    if r.returncode and "--yes" in (r.stderr or "") and "unexpected argument" in (r.stderr or ""):
+        r = bwu(*args, stdin=stdin)
+    return r
+
+
 def vault_unlocked() -> bool:
     return bool(bwu_bin()) and bwu("unlocked").returncode == 0
 
@@ -396,12 +406,12 @@ def cmd_secret(a) -> int:
             sys.exit('usage: secret put <name> [user] [--generate N]   (value on stdin unless --generate)')
         name, user = a.args[0], (a.args[1] if len(a.args) > 1 else None)
         if a.generate:
-            r = bwu("generate", str(a.generate), name, *([user] if user else []), "--folder", SECRET_FOLDER)
+            r = bwu_confirmed("generate", str(a.generate), name, *([user] if user else []), "--folder", SECRET_FOLDER)
         else:
             value = sys.stdin.read().rstrip("\n")
             if not value:
                 sys.exit("no value on stdin")
-            r = bwu("add", name, *([user] if user else []), "--folder", SECRET_FOLDER, stdin=value + "\n")
+            r = bwu_confirmed("add", name, *([user] if user else []), "--folder", SECRET_FOLDER, stdin=value + "\n")
         if r.returncode:
             sys.exit("bitwarden-use failed: " + (r.stderr.strip() or r.stdout.strip()))
         bwu("sync")
