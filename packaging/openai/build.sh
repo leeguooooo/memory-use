@@ -17,6 +17,7 @@ cp "$HERE/assets/logo.png" "$STAGE/assets/"
 cp "$HERE/SKILL.md" "$STAGE/skills/memory-use/SKILL.md"
 cp "$ROOT/scripts/memory_use.py" "$STAGE/skills/memory-use/scripts/"
 cp "$ROOT/LICENSE" "$STAGE/"
+cp "$HERE/README.md" "$HERE/SECURITY.md" "$HERE/.codexignore" "$STAGE/"
 
 ZIP="$OUT/memory-use-$VERSION.zip"
 rm -f "$ZIP"
