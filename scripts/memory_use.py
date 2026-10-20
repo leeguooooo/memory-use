@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 TOOL_REPO = "leeguooooo/memory-use"
 INSTALL_URL = f"https://raw.githubusercontent.com/{TOOL_REPO}/main/install.sh"
 DEFAULT_NAME = "personal-memory"
