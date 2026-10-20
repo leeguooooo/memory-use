@@ -51,7 +51,7 @@ For a focused topic, `brief` keeps at most two chunks per note, drops weak match
 Agents forget to look things up. The Claude Code plugin ships three hooks (`hooks/hooks.json`):
 
 - **UserPromptSubmit**: when your message names something the notes know (any glossary alias, including colloquial ones like "windows 电脑", or a section name), the agent gets one line: `the notes know about leo-desktop — run memory-use brief leo-desktop first`. Nothing otherwise; ~50 ms, stdlib only.
-- **PostToolUseFailure** (Bash): when a command fails and the command or its error names something the notes know, the agent gets the same pointer before it retries: `that command failed and the notes know about nas — run memory-use brief nas`. At most once per concept per session, so a retry loop does not repeat it.
+- **PostToolUseFailure** (Bash): when a command fails and the command or its error names something the notes know, the agent gets the same pointer before it retries: `that command failed and the notes know about nas — run memory-use brief nas`. When the same command fails a third time without naming anything known, its program and error words are searched across the notes, and a note that mentions that program is pointed at. At most once per concept or note per session, so a retry loop does not repeat it.
 - **SessionStart**: silent unless the notes repo is missing or autosync is stuck.
 
 Installed with `install.sh` instead of the plugin? Add the same to `~/.claude/settings.json`:

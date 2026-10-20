@@ -296,6 +296,35 @@ class MemoryUseTest(unittest.TestCase):
         self.assertEqual(hook("ssh nas.example.com", "x", sid="s3", is_interrupt=True)[1], "")
         self.assertEqual(hook("memory-use search nas", "Exit code 1", sid="s4")[1], "")   # our own command
 
+    def test_tool_failure_hook_searches_on_third_identical_failure(self):
+        self.addCleanup(setattr, mu, "STATE_DIR", mu.STATE_DIR)
+        mu.STATE_DIR = Path(self.tmp.name) / "state"
+        (self.root / "nas" / "offsite.md").write_text(
+            "# 异地备份\n\n> 更新：2026-10-01 · 状态：在用\n\n**要点**\n- rclone sync 推到 b2\n\n## 排错\n\n"
+            "rclone 报 couldn't find section in config：rclone.conf 不在默认位置，加 --config ~/.config/rclone/rclone.conf\n")
+        (self.root / "nas" / "misc.md").write_text(ARTICLE_OK.replace("Lucky 在 443", "find the section in config"))
+        def fail(command, error, sid="r1"):
+            sys_stdin = sys.stdin
+            sys.stdin = io.StringIO(json.dumps({"session_id": sid, "tool_name": "Bash", "tool_input": {"command": command},
+                                                "error": error}))
+            try:
+                return self.run_cmd("hook", "tool")[1]
+            finally:
+                sys.stdin = sys_stdin
+        cmd, err = "rclone sync photos b2:bucket", "Exit code 1\nFailed to create file system: couldn't find section in config file"
+        self.assertEqual(fail(cmd, err), "")
+        self.assertEqual(fail(cmd, err), "")
+        ctx = json.loads(fail(cmd, err))["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("failed 3 times", ctx)
+        self.assertIn("nas/offsite.md", ctx)
+        self.assertEqual(fail(cmd, err), "")                                     # pointed at once
+        for _ in range(3):                                                       # a generic runner never triggers it
+            out = fail("git push origin main", "Exit code 1\ncouldn't find section in config", sid="r2")
+        self.assertEqual(out, "")
+        for _ in range(3):                                                       # generic error words alone don't either
+            out = fail("terraform apply", "Exit code 1\nfind the section in config", sid="r3")
+        self.assertEqual(out, "")
+
     def test_session_hook_silent_when_healthy(self):
         mu.STATE_FILE = Path(self.tmp.name) / "autosync.json"
         rc, out = self.run_cmd("hook", "session")

@@ -1173,48 +1173,107 @@ def prompt_mentions(root: Path, prompt: str, limit: int = 3) -> list[str]:
     return found[:limit]
 
 
-def not_yet_nudged(sid: str, concepts: list[str]) -> list[str]:
-    """The concepts not yet pointed at in this session, recorded as pointed at now (STATE_DIR/nudged.json).
-    MemT stores at most one experience per episode: a repeated nudge is noise, and noise costs the agent."""
-    if not sid:
-        return concepts
-    f = STATE_DIR / "nudged.json"
+def session_store() -> dict:
+    """Per-session hook memory (STATE_DIR/nudged.json): {session_id: {t, concepts, fails}}; a day's worth."""
     try:
-        seen = json.loads(f.read_text())
+        seen = json.loads((STATE_DIR / "nudged.json").read_text())
     except (OSError, ValueError):
         seen = {}
     now = int(time.time())
-    seen = {k: v for k, v in seen.items() if now - v.get("t", 0) < 86400}     # sessions older than a day
-    done = seen.get(sid, {}).get("concepts", [])
+    return {k: v for k, v in seen.items() if isinstance(v, dict) and now - v.get("t", 0) < 86400}
+
+
+def save_session_store(seen: dict) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        (STATE_DIR / "nudged.json").write_text(json.dumps(seen))
+    except OSError:
+        pass
+
+
+def not_yet_nudged(sid: str, concepts: list[str]) -> list[str]:
+    """The concepts not yet pointed at in this session, recorded as pointed at now.
+    MemT stores at most one experience per episode: a repeated nudge is noise, and noise costs the agent."""
+    if not sid:
+        return concepts
+    seen = session_store()
+    s = seen.setdefault(sid, {})
+    done = s.get("concepts", [])
     new = [c for c in concepts if c not in done]
     if new:
-        seen[sid] = {"t": now, "concepts": done + new}
-        try:
-            f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(json.dumps(seen))
-        except OSError:
-            pass
+        s.update(t=int(time.time()), concepts=done + new)
+        save_session_store(seen)
     return new
 
 
+def failure_count(sid: str, cmd: str) -> int:
+    """How many times this exact command has failed in this session, counting this failure."""
+    if not sid:
+        return 1
+    seen = session_store()
+    s = seen.setdefault(sid, {})
+    fails = s.setdefault("fails", {})
+    key = " ".join(cmd.split())[:300]
+    fails[key] = fails.get(key, 0) + 1
+    s["t"] = int(time.time())
+    save_session_store(seen)
+    return fails[key]
+
+
+NOISE_WORDS = {"error", "errors", "failed", "failure", "fatal", "warning", "the", "and", "for", "with", "not", "no",
+               "cannot", "could", "can't", "unable", "such", "file", "directory", "command", "found", "exit", "code",
+               "usage", "try", "help", "line", "from", "this", "that", "you", "are", "was", "has", "have", "sudo"}
+
+
+# runners whose name says nothing about what failed (`git push`, `python3 x.py`); the repeat signal skips them
+GENERIC_PROGRAMS = {"bash", "sh", "zsh", "cd", "python", "python3", "node", "npm", "npx", "pnpm", "bun", "uv", "git",
+                    "make", "cat", "echo", "ls", "grep", "rg", "find", "sed", "awk", "curl", "test", "true", "false"}
+
+
+def failure_terms(cmd: str, err: str) -> list[str]:
+    """The distinctive words of a failed command and the start of its error: program, host, error names."""
+    words: list[str] = []
+    for w in re.findall(r"[A-Za-z][\w.-]{2,}|[\u3400-\u9fff]{2,}", ABS_PATH.sub(" ", cmd + "\n" + err[:500])):
+        w = w.lower().strip(".-")
+        if len(w) >= 3 and w not in NOISE_WORDS and w not in words:
+            words.append(w)
+    return words[:8]
+
+
 def tool_failure_nudge(d: Path, ev: dict) -> str | None:
-    """PostToolUseFailure: when a failed command or its error names something the notes know, point at the
-    notes before the agent retries. Each concept at most once per session."""
+    """PostToolUseFailure, MemT's harness-triggered recall. The failure names something the notes know → point at
+    it. The same command failed a third time → search the notes for the command and its error, and point at a
+    strong match. Each concept or article at most once per session."""
     if ev.get("is_interrupt"):
         return None
     inp = ev.get("tool_input") or {}
     cmd = str(inp.get("command") or inp.get("file_path") or "")
     if re.match(r"\s*(memory-use|python3?\s+\S*memory_use\.py)\b", cmd):
         return None
+    sid = str(ev.get("session_id") or "")
     err = re.sub(r"^Exit code \d+\s*", "", str(ev.get("error") or ""))[:2000]
+    times = failure_count(sid, cmd)
     found = prompt_mentions(d, cmd + "\n" + err)
-    if not found:
+    if found:
+        new = not_yet_nudged(sid, found)
+        if new:
+            return (f"memory-use: that command failed and the notes know about {', '.join(new)}. Before retrying, run "
+                    f"`memory-use brief {' '.join(c.split()[0] for c in new)}` — the fix may already be written down.")
         return None
-    new = not_yet_nudged(str(ev.get("session_id") or ""), found)
-    if not new:
+    prog = next((Path(w).name.lower() for w in cmd.split() if "=" not in w and w not in ("sudo", "env", "time")), "")
+    if times < 3 or len(prog) < 3 or prog in GENERIC_PROGRAMS:
         return None
-    return (f"memory-use: that command failed and the notes know about {', '.join(new)}. Before retrying, run "
-            f"`memory-use brief {' '.join(c.split()[0] for c in new)}` — the fix may already be written down.")
+    terms = failure_terms(cmd, err)
+    res = [r for r in rank(d, terms, top=5) if r[1]["file"] != "glossary.md"]
+    if not res:
+        return None
+    c = res[0][1]
+    if c["matched"] < 2 or not hits(c["file"] + "\n" + c["heading"] + "\n" + c["text"], {Alias(prog, typed=True)}):
+        return None                # a note that shares only generic error words with the failure is not about it
+    if not not_yet_nudged(sid, ["file:" + c["file"]]):
+        return None
+    return (f"memory-use: that command has failed {times} times. The notes mention it in {c['file']}:{c['line']} "
+            f"‹{c['path'] or c['file']}› — read it (`memory-use show {c['file']}`) before trying again.")
 
 
 def cmd_hook(a) -> int:

@@ -51,7 +51,7 @@ memory-use eval                # 搜索把对的笔记排第一的比例（evals
 AI 常常想不起先查笔记。Claude Code 插件自带三个钩子（`hooks/hooks.json`）：
 
 - **UserPromptSubmit**：你的话里提到笔记认识的东西（术语表里的任何别名，包括「windows 电脑」这种口语叫法，或者专栏名），AI 会收到一行提示：`the notes know about leo-desktop — 先 memory-use brief leo-desktop`。没提到就什么都不加；约 50 ms，纯标准库。
-- **PostToolUseFailure**（Bash）：命令失败了，而命令本身或报错里提到笔记认识的东西，AI 在重试之前会收到同样的提示：`that command failed and the notes know about nas — 先 memory-use brief nas`。同一个会话里每个东西只提醒一次，反复重试不会刷屏。
+- **PostToolUseFailure**（Bash）：命令失败了，而命令本身或报错里提到笔记认识的东西，AI 在重试之前会收到同样的提示：`that command failed and the notes know about nas — 先 memory-use brief nas`。同一条命令第三次失败、又没提到任何已知的东西时，会拿命令名和报错里的词去搜全部笔记，命中一篇提到这个命令的笔记才提醒。同一个会话里每个东西、每篇笔记只提醒一次，反复重试不会刷屏。
 - **SessionStart**：只有笔记仓库没接上、或自动同步卡住时才说话。
 
 用 `install.sh` 装、没装插件的话，把下面这段加进 `~/.claude/settings.json`：
