@@ -34,6 +34,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/memory_use.py\" hook stop",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -324,6 +325,31 @@ class MemoryUseTest(unittest.TestCase):
         for _ in range(3):                                                       # generic error words alone don't either
             out = fail("terraform apply", "Exit code 1\nfind the section in config", sid="r3")
         self.assertEqual(out, "")
+
+    def test_stop_hook_asks_once_to_save_what_a_failure_taught(self):
+        self.addCleanup(setattr, mu, "STATE_DIR", mu.STATE_DIR)
+        mu.STATE_DIR = Path(self.tmp.name) / "state"
+        def hook(event, payload):
+            sys_stdin = sys.stdin
+            sys.stdin = io.StringIO(json.dumps(payload))
+            try:
+                return self.run_cmd("hook", event)[1]
+            finally:
+                sys.stdin = sys_stdin
+        stop = lambda sid, **kw: hook("stop", {"session_id": sid, "stop_hook_active": False, **kw})
+        self.assertEqual(stop("q1"), "")                                          # nothing failed: no question
+        hook("tool", {"session_id": "q1", "tool_input": {"command": "ssh nas.example.com"}, "error": "Exit code 255"})
+        self.assertEqual(stop("q1", stop_hook_active=True), "")                  # already continuing: never block
+        out = json.loads(stop("q1"))
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("failed on nas", out["reason"])
+        self.assertEqual(stop("q1"), "")                                          # asked once
+        # a save after the failure answers it
+        hook("tool", {"session_id": "q2", "tool_input": {"command": "ssh nas.example.com"}, "error": "Exit code 255"})
+        time.sleep(1.1)
+        (self.root / "nas" / "lucky.md").write_text(ARTICLE_OK + "\nssh 要走 2222\n")
+        sh("git", "commit", "-qam", "nas: ssh port", cwd=self.root)
+        self.assertEqual(stop("q2"), "")
 
     def test_session_hook_silent_when_healthy(self):
         mu.STATE_FILE = Path(self.tmp.name) / "autosync.json"

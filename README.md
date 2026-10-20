@@ -48,10 +48,11 @@ For a focused topic, `brief` keeps at most two chunks per note, drops weak match
 
 ## Recall hook
 
-Agents forget to look things up. The Claude Code plugin ships three hooks (`hooks/hooks.json`):
+Agents forget to look things up. The Claude Code plugin ships four hooks (`hooks/hooks.json`):
 
 - **UserPromptSubmit**: when your message names something the notes know (any glossary alias, including colloquial ones like "windows 电脑", or a section name), the agent gets one line: `the notes know about leo-desktop — run memory-use brief leo-desktop first`. Nothing otherwise; ~50 ms, stdlib only.
 - **PostToolUseFailure** (Bash): when a command fails and the command or its error names something the notes know, the agent gets the same pointer before it retries: `that command failed and the notes know about nas — run memory-use brief nas`. When the same command fails a third time without naming anything known, its program and error words are searched across the notes, and a note that mentions that program is pointed at. At most once per concept or note per session, so a retry loop does not repeat it.
+- **Stop**: after one of those failure pointers, when the agent is about to end its turn and nothing was saved to the notes since, it is asked once whether the way past the failure belongs in the notes. Silent otherwise. (PreCompact and SessionEnd output cannot reach the model, so this is the last point where a lesson can still be written before the context is compacted away.)
 - **SessionStart**: silent unless the notes repo is missing or autosync is stuck.
 
 Installed with `install.sh` instead of the plugin? Add the same to `~/.claude/settings.json`:
@@ -60,6 +61,7 @@ Installed with `install.sh` instead of the plugin? Add the same to `~/.claude/se
 "hooks": {
   "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "memory-use hook prompt", "timeout": 5}]}],
   "PostToolUseFailure": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "memory-use hook tool", "timeout": 5}]}],
+  "Stop": [{"hooks": [{"type": "command", "command": "memory-use hook stop", "timeout": 5}]}],
   "SessionStart": [{"matcher": "startup", "hooks": [{"type": "command", "command": "memory-use hook session", "timeout": 5}]}]
 }
 ```

@@ -1257,6 +1257,7 @@ def tool_failure_nudge(d: Path, ev: dict) -> str | None:
     if found:
         new = not_yet_nudged(sid, found)
         if new:
+            note_lesson(sid, new[0])
             return (f"memory-use: that command failed and the notes know about {', '.join(new)}. Before retrying, run "
                     f"`memory-use brief {' '.join(c.split()[0] for c in new)}` — the fix may already be written down.")
         return None
@@ -1272,13 +1273,51 @@ def tool_failure_nudge(d: Path, ev: dict) -> str | None:
         return None                # a note that shares only generic error words with the failure is not about it
     if not not_yet_nudged(sid, ["file:" + c["file"]]):
         return None
+    note_lesson(sid, c["file"])
     return (f"memory-use: that command has failed {times} times. The notes mention it in {c['file']}:{c['line']} "
             f"‹{c['path'] or c['file']}› — read it (`memory-use show {c['file']}`) before trying again.")
+
+
+def note_lesson(sid: str, about: str) -> None:
+    """Remember that a command failed on something the notes cover; the Stop hook asks whether the fix is written."""
+    if not sid:
+        return
+    seen = session_store()
+    s = seen.setdefault(sid, {})
+    s["t"] = int(time.time())
+    s.setdefault("lessons", []).append({"about": about, "t": s["t"]})
+    save_session_store(seen)
+
+
+def stop_reminder(d: Path, ev: dict) -> str | None:
+    """Stop: MemT commits a turn into memory before the plain context is dropped; compaction drops ours the same way.
+    When a command failed on something the notes cover and the notes repo has no commit since, ask once whether
+    the way past it belongs in the notes. Only Stop can still reach the model (PreCompact/SessionEnd output can't)."""
+    sid = str(ev.get("session_id") or "")
+    if not sid or ev.get("stop_hook_active"):
+        return None
+    seen = session_store()
+    lessons = [x for x in seen.get(sid, {}).get("lessons", []) if not x.get("asked")]
+    if not lessons:
+        return None
+    for x in lessons:
+        x["asked"] = True
+    save_session_store(seen)
+    since = min(x["t"] for x in lessons)
+    # --since is inclusive and second-grained: a commit in the failure's own second predates the lesson
+    if git("log", f"--since=@{since + 1}", "--format=%h", cwd=d, check=False).stdout.strip():
+        return None            # something was saved after the failure; trust it
+    about = ", ".join(dict.fromkeys(x["about"] for x in lessons))
+    return (f"memory-use: earlier in this session a command failed on {about} and you were pointed at the notes. "
+            "If you got past it with something the notes do not say yet (a cause, fix, flag or gotcha), write it into "
+            "the matching article now, with the symptom and how you verified it, and `memory-use save` it. "
+            "If nothing new was learned, just finish.")
 
 
 def cmd_hook(a) -> int:
     """Claude Code hooks. prompt: nudge to recall when the message names something the notes know.
     tool: the same nudge when a failed command touches something the notes know (PostToolUseFailure).
+    stop: after such a failure, once, ask whether the way past it belongs in the notes (Stop).
     session: one line only when the memory is not healthy (no repo, autosync failing). Never fails the host."""
     try:
         d = repo_dir()
@@ -1291,6 +1330,10 @@ def cmd_hook(a) -> int:
                     print(f"memory-use: autosync is stuck ({st.get('result')}); run `memory-use sync` / `doctor` before relying on the notes")
             return 0
         raw = sys.stdin.read()
+        if a.event == "stop":
+            if (d / ".git").exists() and (msg := stop_reminder(d, json.loads(raw, strict=False))):
+                print(json.dumps({"decision": "block", "reason": msg}))
+            return 0
         if a.event == "tool":
             # plain stdout of a PostToolUseFailure hook only reaches the debug log; additionalContext reaches the model
             if (d / ".git").exists() and (msg := tool_failure_nudge(d, json.loads(raw, strict=False))):
@@ -1834,8 +1877,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--misses", type=int, default=15, help="list up to N queries not ranked first (0: none)")
     s.set_defaults(fn=cmd_eval)
     s = sub.add_parser("hook", help="Claude Code hook entry points: prompt (UserPromptSubmit, JSON on stdin) | "
-                                    "tool (PostToolUseFailure, JSON on stdin) | session (SessionStart)")
-    s.add_argument("event", choices=["prompt", "tool", "session"]); s.set_defaults(fn=cmd_hook)
+                                    "tool (PostToolUseFailure) | stop (Stop) | session (SessionStart)")
+    s.add_argument("event", choices=["prompt", "tool", "stop", "session"]); s.set_defaults(fn=cmd_hook)
     s = sub.add_parser("upgrade", help="update this skill checkout (and the Claude Code plugin, if installed)")
     s.add_argument("--check", action="store_true"); s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_upgrade)

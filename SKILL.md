@@ -55,6 +55,8 @@ When recall missed — `brief` did not surface a note that turned out to hold th
 
 ## After work (save)
 
+When a Stop hook line says `a command failed on X … write it into the matching article now`, answer it before finishing: if you learned how to get past the failure and the notes don't say it, save it (symptom, cause, fix, how you verified); otherwise just finish.
+
 Write back whenever the work produced something a future session needs: a new service, port, path, host, decision, workaround, gotcha, rollback, or todo. Do it without being asked for infra work; for other topics, ask once ("要记到 memory 吗？").
 
 1. Put it in the right section (`new` if none fits). Prefer updating an existing article; keep the section README's article list and troubleshooting table current.
