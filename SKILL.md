@@ -68,6 +68,8 @@ Write back whenever the work produced something a future session needs: a new se
    ```
    # 标题 / Title
    > 更新：2026-09-15 · 状态：在用     (or: > Updated: 2026-09-15 · Status: active)
+                                      optional `· 复核：30d` / `· Review: 30d` (lint flags it after 30 days
+                                      instead of 120); `复核：长期` / `Review: never` for facts that don't drift
    **要点**                            (or: **Key points**)
    - 2–4 bullets: the facts and commands someone needs most — include when it applies
      (the symptom or error that should bring this note to mind) and how to verify the fix

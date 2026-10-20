@@ -205,6 +205,20 @@ class MemoryUseTest(unittest.TestCase):
         rc, out = hook("check the nas section")                               # section names count too
         self.assertIn("nas", out)
 
+    def test_lint_review_interval_per_article(self):
+        old = (mu.dt.date.today() - mu.dt.timedelta(days=200)).isoformat()
+        recent = (mu.dt.date.today() - mu.dt.timedelta(days=35)).isoformat()
+        art = lambda date, extra="": ARTICLE_OK.replace("2026-09-15 · 状态：在用", f"{date} · 状态：在用{extra}")
+        (self.root / "nas" / "lucky.md").write_text(art(recent, " · 复核：30d"))      # short-lived fact, overdue
+        (self.root / "nas" / "office.md").write_text(art(recent))                     # default 120 days, fine
+        (self.root / "nas" / "wifi.md").write_text(art(old, " · 复核：长期"))          # does not drift
+        (self.root / "nas" / "exit.md").write_text(art(old).replace("状态", "Review: never · 状态"))
+        (self.root / "nas" / "old.md").write_text(art(old))                          # default, overdue
+        rc, out = self.run_cmd("lint")
+        stale = [l for l in out.splitlines() if "last updated" in l]
+        self.assertEqual(sorted(l.split()[1].rstrip(":") for l in stale), ["nas/lucky.md", "nas/old.md"], out)
+        self.assertIn("review every 30", out)
+
     def test_glossary_pointer_ranks_its_article_first(self):
         (self.root / "nas" / "README.md").write_text("# NAS\n\n## 出口\n\nofficemac officemac officemac 出口\n")
         rc, out = self.run_cmd("search", "officemac")

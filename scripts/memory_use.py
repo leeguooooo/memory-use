@@ -1515,6 +1515,9 @@ def cmd_brief(a) -> int:
 
 
 UPDATED = re.compile(r"(?:更新|Updated)[：:]\s*(\d{4}-\d{2}-\d{2})", re.I)
+# per-article review interval: `· 复核：30d` / `· Review: 30d`, or 长期 / never for facts that do not drift.
+# Like MemT's forget gates, which start every memory channel at its own half-life instead of one shared rate.
+REVIEW = re.compile(r"(?:复核|Review)[：:]\s*(?:(\d+)\s*(?:d|天|days?)\b|(长期|不复核|never))", re.I)
 # router-style LAN addresses (x.x.x.1 / .254) repeat at every site, so as a glossary alias they tie unrelated places together
 GATEWAY_IP = re.compile(r"(10|192\.168|172\.(1[6-9]|2\d|3[01]))(\.\d{1,3}){1,2}\.(1|254)")
 
@@ -1547,8 +1550,11 @@ def cmd_lint(a) -> int:
                 warns.append(f"{rel}: no **要点** / **Key points** (2–4 bullet summary) near the top")
             if m:
                 age = (today - dt.date.fromisoformat(m.group(1))).days
-                if age > STALE_DAYS and not re.search(r"已废弃|deprecated|obsolete", head, re.I):
-                    warns.append(f"{rel}: last updated {age} days ago — re-verify or mark 已废弃 / move to archive/")
+                r = REVIEW.search(head)
+                limit = None if r and r.group(2) else int(r.group(1)) if r else STALE_DAYS
+                if limit is not None and age > limit and not re.search(r"已废弃|deprecated|obsolete", head, re.I):
+                    warns.append(f"{rel}: last updated {age} days ago (review every {limit}) — re-verify and bump 更新, "
+                                 "set `· 复核：<N>d` / `长期`, or mark 已废弃 / move to archive/")
         if p.name == "todo.md":
             n_open = len(re.findall(r"^\s*- \[ \]", text, re.M))
             n_done = len(re.findall(r"^\s*- \[x\]", text, re.M | re.I))
