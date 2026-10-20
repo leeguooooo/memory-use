@@ -1131,6 +1131,9 @@ def update_notice() -> None:
         print(f"memory-use {st['latest']} is available (you have {VERSION}). Upgrade: memory-use upgrade", file=sys.stderr)
 
 
+ABS_PATH = re.compile(r"(?<![\w.:/~])~?/[^\s`'\")]+")
+
+
 def prompt_mentions(root: Path, prompt: str, limit: int = 3) -> list[str]:
     """Glossary concepts (by first alias) and section names that a user message mentions."""
     low = prompt.lower()
@@ -1149,9 +1152,33 @@ def prompt_mentions(root: Path, prompt: str, limit: int = 3) -> list[str]:
     return found[:limit]
 
 
+def not_yet_nudged(sid: str, concepts: list[str]) -> list[str]:
+    """The concepts not yet pointed at in this session, recorded as pointed at now (STATE_DIR/nudged.json).
+    MemT stores at most one experience per episode: a repeated nudge is noise, and noise costs the agent."""
+    if not sid:
+        return concepts
+    f = STATE_DIR / "nudged.json"
+    try:
+        seen = json.loads(f.read_text())
+    except (OSError, ValueError):
+        seen = {}
+    now = int(time.time())
+    seen = {k: v for k, v in seen.items() if now - v.get("t", 0) < 86400}     # sessions older than a day
+    done = seen.get(sid, {}).get("concepts", [])
+    new = [c for c in concepts if c not in done]
+    if new:
+        seen[sid] = {"t": now, "concepts": done + new}
+        try:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps(seen))
+        except OSError:
+            pass
+    return new
+
+
 def tool_failure_nudge(d: Path, ev: dict) -> str | None:
     """PostToolUseFailure: when a failed command or its error names something the notes know, point at the
-    notes before the agent retries. Each concept is nudged at most once per session (STATE_DIR/nudged.json)."""
+    notes before the agent retries. Each concept at most once per session."""
     if ev.get("is_interrupt"):
         return None
     inp = ev.get("tool_input") or {}
@@ -1162,24 +1189,9 @@ def tool_failure_nudge(d: Path, ev: dict) -> str | None:
     found = prompt_mentions(d, cmd + "\n" + err)
     if not found:
         return None
-    sid = str(ev.get("session_id") or "")
-    f = STATE_DIR / "nudged.json"
-    try:
-        seen = json.loads(f.read_text())
-    except (OSError, ValueError):
-        seen = {}
-    now = int(time.time())
-    seen = {k: v for k, v in seen.items() if now - v.get("t", 0) < 86400}     # sessions older than a day
-    done = seen.get(sid, {}).get("concepts", [])
-    new = [c for c in found if c not in done]
+    new = not_yet_nudged(str(ev.get("session_id") or ""), found)
     if not new:
         return None
-    seen[sid] = {"t": now, "concepts": done + new}
-    try:
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps(seen))
-    except OSError:
-        pass
     return (f"memory-use: that command failed and the notes know about {', '.join(new)}. Before retrying, run "
             f"`memory-use brief {' '.join(c.split()[0] for c in new)}` — the fix may already be written down.")
 
@@ -1205,12 +1217,14 @@ def cmd_hook(a) -> int:
                 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUseFailure", "additionalContext": msg}}))
             return 0
         try:
-            prompt = json.loads(raw).get("prompt", "") if raw.strip().startswith("{") else raw
+            ev = json.loads(raw, strict=False) if raw.strip().startswith("{") else {"prompt": raw}
         except ValueError:
-            prompt = raw
+            ev = {"prompt": raw}
+        prompt = str(ev.get("prompt") or "")
         if not prompt.strip() or not (d / ".git").exists():
             return 0
-        hits = prompt_mentions(d, prompt)
+        # an absolute path pasted into the message (/Users/me/github.com/memory-use/…) is not a topic
+        hits = not_yet_nudged(str(ev.get("session_id") or ""), prompt_mentions(d, ABS_PATH.sub(" ", prompt)))
         if hits:
             print(f"memory-use: the notes know about {', '.join(hits)}. Before acting, run "
                   f"`memory-use brief {' '.join(h.split()[0] for h in hits)}` and read the matching notes.")

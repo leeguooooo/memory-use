@@ -205,6 +205,22 @@ class MemoryUseTest(unittest.TestCase):
         rc, out = hook("check the nas section")                               # section names count too
         self.assertIn("nas", out)
 
+    def test_prompt_hook_once_per_session_and_ignores_paths(self):
+        self.addCleanup(setattr, mu, "STATE_DIR", mu.STATE_DIR)
+        mu.STATE_DIR = Path(self.tmp.name) / "state"
+        def hook(prompt, sid):
+            sys_stdin = sys.stdin
+            sys.stdin = io.StringIO(json.dumps({"prompt": prompt, "session_id": sid}))
+            try:
+                return self.run_cmd("hook", "prompt")[1]
+            finally:
+                sys.stdin = sys_stdin
+        self.assertIn("brief nas", hook("群晖又连不上了", "a"))
+        self.assertEqual(hook("群晖还是不行", "a"), "")                          # already pointed at this session
+        self.assertIn("brief nas", hook("群晖", "b"))
+        self.assertEqual(hook("output in /tmp/work/nas/log.txt", "c"), "")      # an absolute path is not a topic
+        self.assertIn("nas", hook("open http://nas.example.com/admin", "d"))    # a URL host is
+
     def test_tool_failure_hook_nudges_once_per_concept(self):
         self.addCleanup(setattr, mu, "STATE_DIR", mu.STATE_DIR)
         mu.STATE_DIR = Path(self.tmp.name) / "state"
