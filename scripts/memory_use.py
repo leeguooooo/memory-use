@@ -182,6 +182,8 @@ def chunks(root: Path, include_archive: bool = False) -> list[dict]:
     out = []
     for p in md_files(root, include_archive):
         rel = str(p.relative_to(root))
+        if rel == "evals.md":
+            continue    # the eval questions, word for word: ranking them would answer every case with the test itself
         trail: list[str] = []
         cur = {"file": rel, "line": 1, "path": "", "heading": "", "lines": []}
         fence = None

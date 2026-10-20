@@ -250,6 +250,8 @@ class MemoryUseTest(unittest.TestCase):
         self.assertEqual(rows["evals.md"][1:3], ["2", "50%"])                  # lucky first; 改密码 lives in todo.md
         self.assertEqual(rows["glossary"][1:3], ["1", "100%"])
         self.assertIn("'改密码' → nas/office.md at miss", out)
+        rc, out = self.run_cmd("search", "lucky", "443")
+        self.assertNotIn("evals.md", out)                                   # the questions are not a note
         # a troubleshooting row whose fix links an article is a case; its own README is left out of the ranking
         (self.root / "nas" / "README.md").write_text(
             "# NAS\n\n## 出问题先看这里\n\n| 现象 | 处理 |\n|---|---|\n| Lucky 证书过期 | 443 被占，见 [lucky.md](lucky.md) |\n"
