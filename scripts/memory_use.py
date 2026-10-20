@@ -1255,9 +1255,9 @@ def tool_failure_nudge(d: Path, ev: dict) -> str | None:
     times = failure_count(sid, cmd)
     found = prompt_mentions(d, cmd + "\n" + err)
     if found:
+        note_lesson(sid, found[0])     # every failure re-arms the Stop question, so it lands after the last one
         new = not_yet_nudged(sid, found)
         if new:
-            note_lesson(sid, new[0])
             return (f"memory-use: that command failed and the notes know about {', '.join(new)}. Before retrying, run "
                     f"`memory-use brief {' '.join(c.split()[0] for c in new)}` — the fix may already be written down.")
         return None
@@ -1271,21 +1271,24 @@ def tool_failure_nudge(d: Path, ev: dict) -> str | None:
     c = res[0][1]
     if c["matched"] < 2 or not hits(c["file"] + "\n" + c["heading"] + "\n" + c["text"], {Alias(prog, typed=True)}):
         return None                # a note that shares only generic error words with the failure is not about it
+    note_lesson(sid, c["file"])
     if not not_yet_nudged(sid, ["file:" + c["file"]]):
         return None
-    note_lesson(sid, c["file"])
     return (f"memory-use: that command has failed {times} times. The notes mention it in {c['file']}:{c['line']} "
             f"‹{c['path'] or c['file']}› — read it (`memory-use show {c['file']}`) before trying again.")
 
 
 def note_lesson(sid: str, about: str) -> None:
-    """Remember that a command failed on something the notes cover; the Stop hook asks whether the fix is written."""
+    """Remember that a command failed on something the notes cover; the Stop hook asks whether the fix is written.
+    A failure after the question was asked (the agent was still stuck then) arms it again."""
     if not sid:
         return
     seen = session_store()
     s = seen.setdefault(sid, {})
     s["t"] = int(time.time())
-    s.setdefault("lessons", []).append({"about": about, "t": s["t"]})
+    lessons = s.setdefault("lessons", [])
+    if not any(x["about"] == about and not x.get("asked") for x in lessons):
+        lessons.append({"about": about, "t": s["t"]})
     save_session_store(seen)
 
 
@@ -1311,7 +1314,7 @@ def stop_reminder(d: Path, ev: dict) -> str | None:
     return (f"memory-use: earlier in this session a command failed on {about} and you were pointed at the notes. "
             "If you got past it with something the notes do not say yet (a cause, fix, flag or gotcha), write it into "
             "the matching article now, with the symptom and how you verified it, and `memory-use save` it. "
-            "If nothing new was learned, just finish.")
+            "If nothing new was learned, or you are still stuck, just finish.")
 
 
 def cmd_hook(a) -> int:

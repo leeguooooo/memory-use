@@ -344,6 +344,11 @@ class MemoryUseTest(unittest.TestCase):
         self.assertEqual(out["decision"], "block")
         self.assertIn("failed on nas", out["reason"])
         self.assertEqual(stop("q1"), "")                                          # asked once
+        # still stuck when asked: the next failure re-arms it, so the question lands after the last failure
+        hook("tool", {"session_id": "q1", "tool_input": {"command": "ssh -p 2222 nas.example.com"}, "error": "Exit code 255"})
+        hook("tool", {"session_id": "q1", "tool_input": {"command": "ssh -p 22 nas.example.com"}, "error": "Exit code 255"})
+        self.assertIn("failed on nas", json.loads(stop("q1"))["reason"])         # one question for the streak
+        self.assertEqual(stop("q1"), "")
         # a save after the failure answers it
         hook("tool", {"session_id": "q2", "tool_input": {"command": "ssh nas.example.com"}, "error": "Exit code 255"})
         time.sleep(1.1)
