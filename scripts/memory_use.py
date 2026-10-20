@@ -782,9 +782,8 @@ def claude_skill_link() -> Path:
 def skill_links() -> list[Path]:
     home = Path.home()
     out = [home / ".agents" / "skills" / "memory-use", home / ".claude" / "skills" / "memory-use"]
-    for agent in (".codex", ".hermes"):    # Codex and Hermes Agent read SKILL.md folders too, when installed
-        if (home / agent / "skills").is_dir():
-            out.append(home / agent / "skills" / "memory-use")
+    if (home / ".codex" / "skills").is_dir():
+        out.append(home / ".codex" / "skills" / "memory-use")
     return out
 
 

@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/leeguooooo/memory-use/main/install.
 curl -fsSL https://raw.githubusercontent.com/leeguooooo/memory-use/main/install.sh | sh -s -- --repo you/notes --create
 ```
 
-This links the skill into `~/.agents/skills`, `~/.claude/skills` (and `~/.codex/skills`, `~/.hermes/skills` when Codex / Hermes Agent are installed), puts `memory-use` on your PATH (`~/.local/bin`), clones the notes, enables the secret-scan pre-commit hook, and turns on autosync. `memory-use doctor` shows the state. Any git host works: `--repo git@gitlab.com:you/notes.git`.
+This links the skill into `~/.agents/skills`, `~/.claude/skills` (and `~/.codex/skills`), puts `memory-use` on your PATH (`~/.local/bin`), clones the notes, enables the secret-scan pre-commit hook, and turns on autosync. `memory-use doctor` shows the state. Any git host works: `--repo git@gitlab.com:you/notes.git`.
 
 Also available through the family bundle: `/plugin install use-family@leeguooooo-plugins` (Claude Code) or `install-use-family.sh` from [leeguooooo/plugins](https://github.com/leeguooooo/plugins); then run `memory-use init --repo you/notes` once.
 

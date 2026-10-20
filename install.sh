@@ -40,7 +40,6 @@ else
   link "../../.agents/skills/memory-use" "$HOME/.claude/skills/memory-use"
 fi
 [ -d "$HOME/.codex/skills" ] && link "$ROOT" "$HOME/.codex/skills/memory-use"
-[ -d "$HOME/.hermes/skills" ] && link "$ROOT" "$HOME/.hermes/skills/memory-use"
 chmod +x "$ROOT/scripts/memory_use.py"
 link "$ROOT/scripts/memory_use.py" "$HOME/.local/bin/memory-use"
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "note: add ~/.local/bin to PATH to run \`memory-use\` directly" ;; esac

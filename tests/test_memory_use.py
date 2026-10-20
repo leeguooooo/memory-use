@@ -749,15 +749,6 @@ class SyncTest(unittest.TestCase):
         self.assertIn("OK   skill installed: Claude Code plugin memory-use@leeguooooo-plugins 0.2.0", out)
         self.assertNotIn("WARN skill installed", out)
 
-    def test_skill_linked_for_codex_and_hermes_only_when_installed(self):
-        mu.ensure_skill_links()
-        self.assertFalse((self.home / ".hermes" / "skills" / "memory-use").exists())
-        for agent in (".codex", ".hermes"):
-            (self.home / agent / "skills").mkdir(parents=True)
-        mu.ensure_skill_links()
-        for agent in (".codex", ".hermes"):
-            self.assertEqual((self.home / agent / "skills" / "memory-use").resolve(), mu.TOOL_ROOT)
-
     def test_doctor_warns_when_plugin_and_link_both_load(self):
         self.install_plugin()
         link = self.home / ".claude" / "skills" / "memory-use"
