@@ -690,6 +690,30 @@ class SyncTest(unittest.TestCase):
         self.assertTrue((self.a / "b.md").exists())
         self.assertEqual(self.head(self.a), self.head(self.b))
 
+    def run_sync(self, repo):
+        os.environ["MEMORY_USE_DIR"] = str(repo)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = mu.main(["sync"])
+        return rc, buf.getvalue()
+
+    def test_sync_rebases_local_commits_onto_new_remote_ones(self):
+        self.commit(self.a, "a.md", "from a\n"); sh("git", "push", "-q", cwd=self.a)
+        self.commit(self.b, "b.md", "from b\n")                      # clean tree, ahead 1, behind 1
+        rc, out = self.run_sync(self.b)
+        self.assertEqual(rc, 0, out); self.assertIn("pushed 1", out)
+        self.assertEqual(self.remote_head(self.bare), self.head(self.b))
+        self.assertTrue((self.b / "a.md").exists())
+
+    def test_sync_aborts_a_conflicting_rebase_and_keeps_the_commit(self):
+        self.commit(self.a, "README.md", "from a\n"); sh("git", "push", "-q", cwd=self.a)
+        self.commit(self.b, "README.md", "from b\n")
+        before = self.head(self.b)
+        rc, out = self.run_sync(self.b)
+        self.assertNotEqual(rc, 0); self.assertIn("aborted", out)
+        self.assertEqual(self.head(self.b), before)
+        self.assertFalse((self.b / ".git" / "rebase-merge").exists())
+
     def test_autosync_leaves_diverged_dirty_tree_alone(self):
         self.commit(self.a, "a.md", "from a\n"); sh("git", "push", "-q", cwd=self.a)
         self.commit(self.b, "b.md", "from b\n")

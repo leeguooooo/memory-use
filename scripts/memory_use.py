@@ -1540,9 +1540,13 @@ def cmd_hook(a) -> int:
 def cmd_sync(_a) -> int:
     d = need_repo()
     dirty = git("status", "--porcelain", cwd=d).stdout.strip()
-    r = git("pull", "--rebase", "--autostash" if dirty else "--ff-only", "-q", cwd=d, check=False)
+    r = git("pull", "--rebase", "-q", *(["--autostash"] if dirty else []), cwd=d, check=False)
     if r.returncode:
         print(r.stderr.strip() or r.stdout.strip())
+        gd = Path(git("rev-parse", "--absolute-git-dir", cwd=d).stdout.strip())
+        if any((gd / x).exists() for x in ("rebase-merge", "rebase-apply")):
+            git("rebase", "--abort", cwd=d, check=False)
+            print("rebase conflicts: aborted, your local commits are untouched — resolve by hand")
         return r.returncode
     ahead = git("rev-list", "--count", "@{u}..HEAD", cwd=d, check=False).stdout.strip()
     if ahead not in ("", "0"):
