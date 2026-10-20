@@ -47,9 +47,10 @@ memory-use lint                # 文章开头格式、README 长度、过期笔�
 
 ## 召回钩子
 
-AI 常常想不起先查笔记。Claude Code 插件自带两个钩子（`hooks/hooks.json`）：
+AI 常常想不起先查笔记。Claude Code 插件自带三个钩子（`hooks/hooks.json`）：
 
 - **UserPromptSubmit**：你的话里提到笔记认识的东西（术语表里的任何别名，包括「windows 电脑」这种口语叫法，或者专栏名），AI 会收到一行提示：`the notes know about leo-desktop — 先 memory-use brief leo-desktop`。没提到就什么都不加；约 50 ms，纯标准库。
+- **PostToolUseFailure**（Bash）：命令失败了，而命令本身或报错里提到笔记认识的东西，AI 在重试之前会收到同样的提示：`that command failed and the notes know about nas — 先 memory-use brief nas`。同一个会话里每个东西只提醒一次，反复重试不会刷屏。
 - **SessionStart**：只有笔记仓库没接上、或自动同步卡住时才说话。
 
 用 `install.sh` 装、没装插件的话，把下面这段加进 `~/.claude/settings.json`：
@@ -57,6 +58,7 @@ AI 常常想不起先查笔记。Claude Code 插件自带两个钩子（`hooks/h
 ```json
 "hooks": {
   "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "memory-use hook prompt", "timeout": 5}]}],
+  "PostToolUseFailure": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "memory-use hook tool", "timeout": 5}]}],
   "SessionStart": [{"matcher": "startup", "hooks": [{"type": "command", "command": "memory-use hook session", "timeout": 5}]}]
 }
 ```

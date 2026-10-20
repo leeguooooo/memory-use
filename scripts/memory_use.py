@@ -1149,8 +1149,44 @@ def prompt_mentions(root: Path, prompt: str, limit: int = 3) -> list[str]:
     return found[:limit]
 
 
+def tool_failure_nudge(d: Path, ev: dict) -> str | None:
+    """PostToolUseFailure: when a failed command or its error names something the notes know, point at the
+    notes before the agent retries. Each concept is nudged at most once per session (STATE_DIR/nudged.json)."""
+    if ev.get("is_interrupt"):
+        return None
+    inp = ev.get("tool_input") or {}
+    cmd = str(inp.get("command") or inp.get("file_path") or "")
+    if re.match(r"\s*(memory-use|python3?\s+\S*memory_use\.py)\b", cmd):
+        return None
+    err = re.sub(r"^Exit code \d+\s*", "", str(ev.get("error") or ""))[:2000]
+    found = prompt_mentions(d, cmd + "\n" + err)
+    if not found:
+        return None
+    sid = str(ev.get("session_id") or "")
+    f = STATE_DIR / "nudged.json"
+    try:
+        seen = json.loads(f.read_text())
+    except (OSError, ValueError):
+        seen = {}
+    now = int(time.time())
+    seen = {k: v for k, v in seen.items() if now - v.get("t", 0) < 86400}     # sessions older than a day
+    done = seen.get(sid, {}).get("concepts", [])
+    new = [c for c in found if c not in done]
+    if not new:
+        return None
+    seen[sid] = {"t": now, "concepts": done + new}
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(seen))
+    except OSError:
+        pass
+    return (f"memory-use: that command failed and the notes know about {', '.join(new)}. Before retrying, run "
+            f"`memory-use brief {' '.join(c.split()[0] for c in new)}` — the fix may already be written down.")
+
+
 def cmd_hook(a) -> int:
     """Claude Code hooks. prompt: nudge to recall when the message names something the notes know.
+    tool: the same nudge when a failed command touches something the notes know (PostToolUseFailure).
     session: one line only when the memory is not healthy (no repo, autosync failing). Never fails the host."""
     try:
         d = repo_dir()
@@ -1163,6 +1199,11 @@ def cmd_hook(a) -> int:
                     print(f"memory-use: autosync is stuck ({st.get('result')}); run `memory-use sync` / `doctor` before relying on the notes")
             return 0
         raw = sys.stdin.read()
+        if a.event == "tool":
+            # plain stdout of a PostToolUseFailure hook only reaches the debug log; additionalContext reaches the model
+            if (d / ".git").exists() and (msg := tool_failure_nudge(d, json.loads(raw, strict=False))):
+                print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUseFailure", "additionalContext": msg}}))
+            return 0
         try:
             prompt = json.loads(raw).get("prompt", "") if raw.strip().startswith("{") else raw
         except ValueError:
@@ -1598,8 +1639,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("migrate", help="before leaving this computer: what is not on GitHub yet, and the one-liner for the new one")
     s.add_argument("--push", action="store_true", help="first push local commits (same as one autosync run)")
     s.set_defaults(fn=cmd_migrate)
-    s = sub.add_parser("hook", help="Claude Code hook entry points: prompt (UserPromptSubmit, JSON on stdin) | session (SessionStart)")
-    s.add_argument("event", choices=["prompt", "session"]); s.set_defaults(fn=cmd_hook)
+    s = sub.add_parser("hook", help="Claude Code hook entry points: prompt (UserPromptSubmit, JSON on stdin) | "
+                                    "tool (PostToolUseFailure, JSON on stdin) | session (SessionStart)")
+    s.add_argument("event", choices=["prompt", "tool", "session"]); s.set_defaults(fn=cmd_hook)
     s = sub.add_parser("upgrade", help="update this skill checkout (and the Claude Code plugin, if installed)")
     s.add_argument("--check", action="store_true"); s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_upgrade)

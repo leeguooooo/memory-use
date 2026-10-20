@@ -23,7 +23,8 @@ one machine, this repo follows them everywhere. It is managed by the
 # Title
 > Updated: 2026-09-15 · Status: active | done | deprecated
 **Key points**
-- 2–4 bullets: the facts and commands someone needs most
+- 2–4 bullets: the facts and commands someone needs most — include when it applies (the symptom or
+  error that should bring this note to mind) and how to verify the fix
 ## Details / why / how to roll back
 ```
 

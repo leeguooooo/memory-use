@@ -47,9 +47,10 @@ For a focused topic, `brief` keeps at most two chunks per note, drops weak match
 
 ## Recall hook
 
-Agents forget to look things up. The Claude Code plugin ships two hooks (`hooks/hooks.json`):
+Agents forget to look things up. The Claude Code plugin ships three hooks (`hooks/hooks.json`):
 
 - **UserPromptSubmit**: when your message names something the notes know (any glossary alias, including colloquial ones like "windows 电脑", or a section name), the agent gets one line: `the notes know about leo-desktop — run memory-use brief leo-desktop first`. Nothing otherwise; ~50 ms, stdlib only.
+- **PostToolUseFailure** (Bash): when a command fails and the command or its error names something the notes know, the agent gets the same pointer before it retries: `that command failed and the notes know about nas — run memory-use brief nas`. At most once per concept per session, so a retry loop does not repeat it.
 - **SessionStart**: silent unless the notes repo is missing or autosync is stuck.
 
 Installed with `install.sh` instead of the plugin? Add the same to `~/.claude/settings.json`:
@@ -57,6 +58,7 @@ Installed with `install.sh` instead of the plugin? Add the same to `~/.claude/se
 ```json
 "hooks": {
   "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "memory-use hook prompt", "timeout": 5}]}],
+  "PostToolUseFailure": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "memory-use hook tool", "timeout": 5}]}],
   "SessionStart": [{"matcher": "startup", "hooks": [{"type": "command", "command": "memory-use hook session", "timeout": 5}]}]
 }
 ```

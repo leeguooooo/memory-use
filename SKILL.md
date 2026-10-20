@@ -41,7 +41,7 @@ python3 $M migrate [--push]                   # on the OLD computer: what is not
 
 ## Before work (recall)
 
-When a hook line says `memory-use: the notes know about X`, run the suggested `brief` before doing anything else — the notes usually hold the gotcha you are about to rediscover. New nicknames the user uses for a machine or service ("windows 电脑") belong in `glossary.md`, so the hook and search recognise them next time.
+When a hook line says `memory-use: the notes know about X` (on a user message) or `that command failed and the notes know about X` (after a failed command), run the suggested `brief` before doing anything else — and before retrying the command — the notes usually hold the gotcha you are about to rediscover. New nicknames the user uses for a machine or service ("windows 电脑") belong in `glossary.md`, so the hook and search recognise them next time.
 
 1. `brief <topic words>` — one compact pack is usually enough (autosync keeps the checkout current; `sync` if `doctor` says behind). Only then `show` a whole file or `search` for specifics.
 2. Read top-down: root README → section README (key facts, troubleshooting) → an article's **要点 / Key points** → its details. Stop as soon as you have what you need.
@@ -66,7 +66,8 @@ Write back whenever the work produced something a future session needs: a new se
    # 标题 / Title
    > 更新：2026-09-15 · 状态：在用     (or: > Updated: 2026-09-15 · Status: active)
    **要点**                            (or: **Key points**)
-   - 2–4 bullets: the facts and commands someone needs most
+   - 2–4 bullets: the facts and commands someone needs most — include when it applies
+     (the symptom or error that should bring this note to mind) and how to verify the fix
    ## 细节 / Details / why / how to roll back
    ```
    Section READMEs stay within ~70 lines. Superseded articles move to `archive/<section>/`. New machine / service / nickname → one line in `glossary.md` (not router addresses like 192.168.1.1: every site has one).

@@ -205,6 +205,33 @@ class MemoryUseTest(unittest.TestCase):
         rc, out = hook("check the nas section")                               # section names count too
         self.assertIn("nas", out)
 
+    def test_tool_failure_hook_nudges_once_per_concept(self):
+        self.addCleanup(setattr, mu, "STATE_DIR", mu.STATE_DIR)
+        mu.STATE_DIR = Path(self.tmp.name) / "state"
+        def hook(command, error, sid="s1", **extra):
+            sys_stdin = sys.stdin
+            sys.stdin = io.StringIO(json.dumps({"hook_event_name": "PostToolUseFailure", "session_id": sid,
+                                                "tool_name": "Bash", "tool_input": {"command": command},
+                                                "error": error, **extra}))
+            try:
+                return self.run_cmd("hook", "tool")
+            finally:
+                sys.stdin = sys_stdin
+        rc, out = hook("ssh admin@nas.example.com", "Exit code 255\nConnection refused")
+        self.assertEqual(rc, 0)
+        ctx = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(ctx["hookEventName"], "PostToolUseFailure")
+        self.assertIn("memory-use brief nas", ctx["additionalContext"])
+        rc, out = hook("ssh admin@nas.example.com", "Exit code 255")              # same concept, same session: quiet
+        self.assertEqual(out, "")
+        rc, out = hook("scp x officemac:", "Exit code 1\nofficemac: lost connection")   # new concept still nudges
+        self.assertIn("memory-use brief 190", json.loads(out)["hookSpecificOutput"]["additionalContext"])
+        rc, out = hook("ssh admin@nas.example.com", "Exit code 255", sid="s2")    # new session nudges again
+        self.assertIn("nas", out)
+        self.assertEqual(hook("npm test", "Exit code 1\n3 failing")[1], "")      # nothing the notes know
+        self.assertEqual(hook("ssh nas.example.com", "x", sid="s3", is_interrupt=True)[1], "")
+        self.assertEqual(hook("memory-use search nas", "Exit code 1", sid="s4")[1], "")   # our own command
+
     def test_session_hook_silent_when_healthy(self):
         mu.STATE_FILE = Path(self.tmp.name) / "autosync.json"
         rc, out = self.run_cmd("hook", "session")
