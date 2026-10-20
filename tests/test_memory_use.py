@@ -436,6 +436,8 @@ class MemoryUseTest(unittest.TestCase):
         sh("git", "clone", "-q", "--bare", str(self.root), str(bare), cwd=self.root)
         sh("git", "remote", "add", "origin", str(bare), cwd=self.root)
         sh("git", "push", "-q", "-u", "origin", "HEAD", cwd=self.root)
+        self.addCleanup(os.environ.__setitem__, "MEMORY_USE_REPO", "")
+        os.environ["MEMORY_USE_REPO"] = str(bare)                 # the repo this computer is bound to
         sh("git", "rm", "-rq", "nas", cwd=self.root)
         rc, out = self.run_cmd("save", "nas", "-m", "drop nas")
         self.assertEqual(rc, 0, out)
@@ -658,8 +660,10 @@ class SyncTest(unittest.TestCase):
         mu.CONFIG_DIR = t / "cfg"; mu.CONFIG = mu.CONFIG_DIR / "config.json"
         mu.KNOWN_SECRETS = mu.CONFIG_DIR / "known-secrets"
         mu.STATE_DIR = t / "state"; mu.STATE_FILE = mu.STATE_DIR / "autosync.json"
+        os.environ["MEMORY_USE_REPO"] = str(self.bare)           # the repo this computer is bound to
 
     def tearDown(self):
+        os.environ["MEMORY_USE_REPO"] = ""
         os.environ.pop("MEMORY_USE_DIR", None)
         if self.old_home:
             os.environ["HOME"] = self.old_home
@@ -746,6 +750,94 @@ class SyncTest(unittest.TestCase):
         link = self.home / ".claude" / "skills" / "memory-use"
         link.parent.mkdir(parents=True); link.symlink_to(mu.TOOL_ROOT)
         self.assertIn("WARN skill loaded twice", self.doctor())
+
+    def remote_head(self, bare):
+        return subprocess.run(["git", "rev-parse", "main"], cwd=bare, capture_output=True, text=True).stdout.strip()
+
+    def test_push_refused_when_the_target_is_not_the_bound_repo(self):
+        """Issue #4: a push goes nowhere unless every resolved push URL is the bound notes repo."""
+        evil = Path(self.tmp.name) / "evil.git"
+        sh("git", "clone", "-q", "--bare", str(self.bare), str(evil), cwd=self.tmp.name)
+        cases = {
+            "remote URL changed": [("remote", "set-url", "origin", str(evil))],
+            "separate pushurl": [("config", "remote.origin.pushurl", str(evil))],
+            "branch.pushRemote": [("remote", "add", "other", str(evil)), ("config", "branch.main.pushRemote", "other")],
+            "remote.pushDefault": [("remote", "add", "other", str(evil)), ("config", "remote.pushDefault", "other")],
+            "insteadOf rewrite": [("config", f"url.{evil}.insteadOf", str(self.bare))],
+            "second pushurl": [("config", "--add", "remote.origin.pushurl", str(self.bare)),
+                               ("config", "--add", "remote.origin.pushurl", str(evil))],
+        }
+        for name, setup in cases.items():
+            with self.subTest(name):
+                repo = Path(self.tmp.name) / ("c-" + name.replace(" ", "-").replace(".", "-"))
+                sh("git", "clone", "-q", str(self.bare), str(repo), cwd=self.tmp.name)
+                for args in setup:
+                    sh("git", *args, cwd=repo)
+                self.commit(repo, "n.md", name + "\n")
+                before, evil_before = self.remote_head(self.bare), self.remote_head(evil)
+                ok, msg = mu.autosync_once(repo)
+                self.assertFalse(ok, msg)
+                self.assertIn("not the notes repo", msg)
+                self.assertEqual(self.remote_head(self.bare), before)
+                self.assertEqual(self.remote_head(evil), evil_before)          # nothing reached the other repo
+                self.assertTrue((repo / "n.md").exists())                       # the commit stays local
+                self.assertIn("n.md", subprocess.run(["git", "log", "--name-only", "-1"], cwd=repo,
+                                                     capture_output=True, text=True).stdout)
+
+    def test_github_target_must_stay_private_with_the_same_id(self):
+        repo = Path(self.tmp.name) / "gh"
+        sh("git", "clone", "-q", str(self.bare), str(repo), cwd=self.tmp.name)
+        sh("git", "remote", "set-url", "origin", "https://x-access-token:SECRET123@github.com/Me/Notes.git", cwd=repo)
+        os.environ["MEMORY_USE_REPO"] = "me/notes"
+        lookups = []
+        def fake(info):
+            def github_repo(slug):
+                lookups.append(slug)
+                return info
+            return github_repo
+        self.addCleanup(setattr, mu, "github_repo", mu.github_repo)
+        mu.github_repo = fake({"private": True, "id": 42, "full_name": "Me/Notes"})
+        remote, branch, problem, verified = mu.push_preflight(repo)
+        self.assertEqual((remote, branch, problem), ("origin", "main", ""))
+        self.assertIn("private, id 42", verified)
+        self.assertEqual(lookups, ["me/notes"])
+        self.assertEqual(json.loads(mu.CONFIG.read_text())["repo_ids"], {"me/notes": 42})   # id pinned on first use
+        for info, why in [({"private": False, "id": 42, "full_name": "Me/Notes"}, "PUBLIC"),
+                          ({"private": True, "id": 7, "full_name": "Me/Notes"}, "different repository"),
+                          ({"private": True, "id": 42, "full_name": "Someone/Notes"}, "renamed or transferred"),
+                          (None, "could not confirm")]:
+            mu.github_repo = fake(info)
+            problem = mu.push_preflight(repo)[2]
+            self.assertIn(why, problem)
+            self.assertNotIn("SECRET123", problem)
+        sh("git", "remote", "set-url", "origin", "git@github.com:someone/notes.git", cwd=repo)
+        mu.github_repo = fake({"private": True, "id": 42, "full_name": "Me/Notes"})
+        problem = mu.push_preflight(repo)[2]
+        self.assertIn("not the notes repo", problem)
+
+    def test_repo_identity_and_redact(self):
+        same = ["git@github.com:Me/Notes.git", "ssh://git@github.com:22/me/notes", "https://u:tok@github.com/ME/notes/",
+                "https://github.com/me/notes.git"]
+        self.assertEqual({mu.repo_identity(u) for u in same}, {"github.com/me/notes"})
+        self.assertEqual(mu.repo_identity("git@gitlab.com:Me/Notes.git"), "gitlab.com/Me/Notes")
+        self.assertEqual(mu.repo_identity(str(self.bare) + "/"), "file:" + os.path.realpath(self.bare))
+        self.assertEqual(mu.redact("https://u:tok@github.com/me/notes"), "https://***@github.com/me/notes")
+        self.assertEqual(mu.redact("git@github.com:me/notes.git"), "git@github.com:me/notes.git")
+
+    def test_save_no_push_and_doctor_shows_target(self):
+        os.environ["MEMORY_USE_DIR"] = str(self.a)
+        (self.a / "x.md").write_text("x\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = mu.main(["save", "x.md", "-m", "x", "--no-push"])
+        self.assertEqual(rc, 0, buf.getvalue())
+        self.assertIn("not pushed", buf.getvalue())
+        self.assertNotEqual(self.head(self.a), self.remote_head(self.bare))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            mu.main(["doctor"])
+        self.assertIn("OK   push target: origin/main", buf.getvalue())
+        self.assertIn("visibility not verifiable on a local path", buf.getvalue())
 
     def test_migrate_reports_unpushed_then_push_fixes_it(self):
         os.environ["MEMORY_USE_DIR"] = str(self.b)

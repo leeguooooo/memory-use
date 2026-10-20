@@ -597,6 +597,106 @@ def cmd_path(_a) -> int:
     return 0
 
 
+# ---------------------------------------------------------------- push safety: notes go only to the bound private repo
+
+
+def redact(url: str) -> str:
+    """Hide credentials in a URL before it is printed or written to the autosync state file."""
+    return re.sub(r"(://)[^/@\s]+@", r"\1***@", url)
+
+
+def repo_identity(spec: str) -> str:
+    """One string per repository however it is spelled: git@github.com:O/R.git, ssh://git@github.com:22/O/R and
+    https://user:token@github.com/O/R/ are all github.com/o/r; a local path is file:<realpath>."""
+    s = spec.strip()
+    if s.startswith("file://"):
+        s = s[len("file://"):]
+    if s.startswith(("/", "~", ".")) or Path(os.path.expanduser(s)).exists():
+        return "file:" + os.path.realpath(os.path.expanduser(s)).rstrip("/")
+    m = re.match(r"^(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?([^/:@]+)(?::\d+)?[:/](.+?)(?:\.git)?/*$", s, re.I)
+    if not m:
+        return "?" + s
+    host, path = m[1].lower(), m[2].strip("/")
+    return f"{host}/{path.lower() if host == 'github.com' else path}"
+
+
+def bound_identity() -> tuple[str, str] | None:
+    """(identity, configured spec) of the notes repo `init` bound this computer to."""
+    slug = repo_slug()
+    if not slug:
+        return None
+    return (repo_identity(slug) if is_url(slug) else "github.com/" + slug.lower()), slug
+
+
+def github_repo(slug: str) -> dict | None:
+    """GitHub's REST view of owner/name (private, numeric id, full_name) as the gh account sees it; None when gh is
+    missing, logged out, offline, or the account cannot see the repo. Tests replace this function."""
+    if not shutil.which("gh"):
+        return None
+    r = subprocess.run(["gh", "api", f"repos/{slug}"], capture_output=True, text=True, timeout=20)
+    try:
+        return json.loads(r.stdout) if r.returncode == 0 else None
+    except ValueError:
+        return None
+
+
+def push_preflight(d: Path) -> tuple[str, str, str, str]:
+    """Where a push of the current branch would really go, checked before anything leaves the machine:
+    (remote, branch, problem, what was verified). The remote is picked the way git picks it (branch.pushRemote, then
+    remote.pushDefault, then the upstream; get-url --push --all expands pushurl and insteadOf) and the push names it
+    explicitly, so what is checked is what is pushed. Every
+    push URL must be the bound notes repo, and on GitHub the repo must still be private with the id recorded the
+    first time it was verified. Anything that can't be checked is a problem: fail closed, keep the commit local."""
+    bound = bound_identity()
+    if not bound:
+        return "", "", "no notes repo bound on this computer; run `memory-use init --repo <owner>/<name>`", ""
+    want, spec = bound
+    cfg = lambda key: git("config", "--get", key, cwd=d, check=False).stdout.strip()
+    here = git("symbolic-ref", "--short", "-q", "HEAD", cwd=d, check=False).stdout.strip()
+    upstream = cfg(f"branch.{here}.remote") if here else ""
+    remote = (cfg(f"branch.{here}.pushRemote") or cfg("remote.pushDefault") or upstream) if here else ""
+    if not remote:
+        return "", "", "the current branch has no upstream to push to; push it once by hand after checking the remote", ""
+    merge = cfg(f"branch.{here}.merge")
+    branch = merge[len("refs/heads/"):] if remote == upstream and merge.startswith("refs/heads/") else here
+    urls = git("remote", "get-url", "--push", "--all", remote, cwd=d, check=False).stdout.split()
+    if not urls:
+        return "", "", f"remote {remote} has no URL", ""
+    for u in urls:
+        if repo_identity(u) != want:
+            return "", "", (f"push target {redact(u)} (remote {remote}) is not the notes repo {redact(spec)}; "
+                             "not pushing. Fix the remote or re-run `memory-use init`"), ""
+    if not want.startswith("github.com/"):
+        host = want.split("/", 1)[0] if not want.startswith("file:") else "a local path"
+        return remote, branch, "", f"{remote}/{branch} → {redact(urls[0])} (visibility not verifiable on {host})"
+    slug = want.split("/", 1)[1]
+    info = github_repo(slug)
+    if info is None:
+        return "", "", (f"could not confirm github.com/{slug} is still private (gh missing or logged out, an account "
+                        "that cannot see it, or offline); commit kept locally — check `gh auth status`"), ""
+    if info.get("private") is not True:
+        return "", "", f"github.com/{slug} is PUBLIC now; not pushing private notes. Make it private again first", ""
+    if str(info.get("full_name", "")).lower() != slug:
+        return "", "", f"github.com/{slug} now resolves to {info.get('full_name')} (renamed or transferred); re-run init", ""
+    ids = load_config().get("repo_ids", {})
+    if slug not in ids:
+        save_config(repo_ids={**ids, slug: info["id"]})          # trust on first use: the id, never the identity
+    elif ids[slug] != info["id"]:
+        return "", "", (f"github.com/{slug} is a different repository than the one first verified (id {ids[slug]} → "
+                        f"{info['id']}: deleted and recreated?); not pushing. If that is expected, remove repo_ids "
+                        f"from {CONFIG}"), ""
+    return remote, branch, "", f"{remote}/{branch} → github.com/{slug} (private, id {info['id']})"
+
+
+def safe_push(d: Path) -> tuple[bool, str]:
+    """Push the current branch to the verified target only, never with a bare `git push`."""
+    remote, branch, problem, _ok = push_preflight(d)
+    if problem:
+        return False, problem
+    p = git("push", "-q", remote, f"HEAD:refs/heads/{branch}", cwd=d, check=False)
+    return (p.returncode == 0), redact((p.stderr or p.stdout).strip())
+
+
 # ---------------------------------------------------------------- setup: init / clone / skill links / hook
 
 
@@ -767,6 +867,12 @@ def cmd_init(a) -> int:
                  f"New notes repo: memory_use.py init --repo {slug} --create   (private, from the starter template)")
     save_config(repo=slug, dir=str(d))
     print(f"config: {CONFIG}")
+    if not is_url(slug):
+        info = github_repo(slug)
+        if info and info.get("private") is not True:
+            print(f"WARNING: github.com/{slug} is public — memory-use will not push notes to it until it is private")
+        if info and str(info.get("full_name", "")).lower() == slug.lower():
+            save_config(repo_ids={**load_config().get("repo_ids", {}), slug.lower(): info["id"]})
     print("hook: " + enable_hook(d))
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     if not KNOWN_SECRETS.exists():
@@ -940,9 +1046,9 @@ def autosync_once(d: Path) -> tuple[bool, str]:
             return False, f"diverged (ahead {ahead}, behind {behind}): rebase conflicts; aborted, needs a human (`memory_use.py sync`)"
         did.append(f"rebased {ahead} onto {behind} new")
     if ahead:
-        r = git("push", "-q", cwd=d, check=False)
-        if r.returncode:
-            return False, "push failed: " + (r.stderr.strip().splitlines() or ["?"])[-1]
+        ok, err = safe_push(d)
+        if not ok:
+            return False, "push failed: " + (err.splitlines() or ["?"])[-1]
         did.append(f"pushed {ahead}")
     note = " (uncommitted edits present, not touched)" if dirty else ""
     return True, (", ".join(did) or "up to date") + note
@@ -1017,6 +1123,8 @@ def cmd_doctor(_a) -> int:
     dirty = [l for l in st[1:] if l.strip()]
     line(not dirty, f"uncommitted changes: {len(dirty)}" + ("" if not dirty else " (may belong to another session)"))
     line(*hook_ok(d))
+    _r, _b, problem, verified = push_preflight(d)
+    line(not problem, "push target: " + (verified or problem))
     plugin = claude_plugin()
     for link in skill_links():
         if plugin and link == claude_skill_link():
@@ -1430,8 +1538,8 @@ def cmd_sync(_a) -> int:
         return r.returncode
     ahead = git("rev-list", "--count", "@{u}..HEAD", cwd=d, check=False).stdout.strip()
     if ahead not in ("", "0"):
-        p = git("push", "-q", cwd=d, check=False)
-        print(f"pushed {ahead} local commit(s)" if not p.returncode else "push failed: " + p.stderr.strip())
+        ok, err = safe_push(d)
+        print(f"pushed {ahead} local commit(s)" if ok else "push failed: " + err)
     print(git("log", "--oneline", "-1", cwd=d).stdout.strip())
     return 0
 
@@ -1909,6 +2017,9 @@ def cmd_save(a) -> int:
     if c.returncode:
         print(c.stderr or c.stdout)
         return c.returncode
+    if a.no_push:
+        print("committed locally (not pushed): " + git("log", "--oneline", "-1", cwd=d).stdout.strip())
+        return 0
     git("fetch", "-q", cwd=d, check=False)
     behind = git("rev-list", "--count", "HEAD..@{u}", cwd=d, check=False).stdout.strip()
     if behind not in ("", "0"):   # only then: autostash does not restore what other sessions had staged
@@ -1917,10 +2028,10 @@ def cmd_save(a) -> int:
         if pull.returncode:
             print("committed locally, but pull --rebase failed:\n" + (pull.stderr or pull.stdout))
             return pull.returncode
-    push = git("push", "-q", cwd=d, check=False)
-    if push.returncode:
-        print("committed locally, push failed:\n" + (push.stderr or push.stdout))
-        return push.returncode
+    ok, err = safe_push(d)
+    if not ok:
+        print("committed locally, not pushed:\n" + err)
+        return 1
     print("pushed " + git("log", "--oneline", "-1", cwd=d).stdout.strip())
     return 0
 
@@ -1975,8 +2086,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("todo", help="open todo items across sections"); s.add_argument("section", nargs="?"); s.set_defaults(fn=cmd_todo)
     s = sub.add_parser("new", help="scaffold a new section"); s.add_argument("name"); s.add_argument("title"); s.add_argument("desc"); s.set_defaults(fn=cmd_new)
     s = sub.add_parser("check", help="scan for secrets"); s.add_argument("paths", nargs="*"); s.add_argument("--staged", action="store_true"); s.set_defaults(fn=cmd_check)
-    s = sub.add_parser("save", help="secret-scan, commit given paths, pull --rebase, push")
+    s = sub.add_parser("save", help="secret-scan, commit given paths, pull --rebase, push (only to the verified notes repo)")
     s.add_argument("paths", nargs="+"); s.add_argument("-m", "--message", required=True); s.add_argument("--trailer", default=os.environ.get("MEMORY_USE_TRAILER", ""))
+    s.add_argument("--no-push", action="store_true", help="commit locally only; autosync or `sync` pushes later")
     s.set_defaults(fn=cmd_save)
     s = sub.add_parser("secret", help="Bitwarden pointers: find | put | get | refs | hashes (values never printed by default)")
     s.add_argument("action", choices=["find", "put", "get", "refs", "hashes"])

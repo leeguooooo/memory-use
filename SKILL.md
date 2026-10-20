@@ -81,6 +81,7 @@ Write back whenever the work produced something a future session needs: a new se
    Section READMEs stay within ~70 lines. Superseded articles move to `archive/<section>/`. New machine / service / nickname → one line in `glossary.md` (not router addresses like 192.168.1.1: every site has one).
 5. `lint` and `check`, then `save <explicit paths> -m "<section>: <what changed>" --trailer "<session attribution line, if the harness gives one>"`.
    - `save` stages only the paths you name. Never `git add -A`: other sessions work in this repo concurrently — look at `git status` and leave their files alone.
+   - It pushes only to the bound private notes repo; when it says `committed locally, not pushed: …` (wrong remote, repo public, `gh` can't see it), tell the user that line — don't push by hand around it. `--no-push` commits only.
    - It refuses to commit when the scan finds a secret. Fix the note; only mark a line `memory-use: allow` if it is a genuine false positive.
 
 ## Secrets

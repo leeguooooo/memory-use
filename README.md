@@ -77,6 +77,8 @@ Installed with `install.sh` instead of the plugin? Add the same to `~/.claude/se
 
 Agents commit with `save`, which names its files explicitly, so parallel sessions never sweep up each other's work.
 
+**Pushes go only to the bound private repo.** Before `save`, `sync` or autosync pushes anything, memory-use works out where the push would really go (`branch.pushRemote`, `remote.pushDefault`, every `pushurl`, `insteadOf` rewrites) and refuses unless each URL is the repo `init` bound this computer to. On GitHub it also asks the API that the repo is still **private** and has the same id as when it was first verified (a deleted-and-recreated or transferred repo does not count). Anything it cannot verify — `gh` logged out or on an account that can't see the repo, offline, a public repo — means no push: the commit stays local and `doctor` / `autosync status` say why. The push then names the verified remote and branch explicitly. Other hosts (GitLab, self-hosted, local paths) get the URL check only; `doctor` says visibility is not verifiable there. `save --no-push` commits without pushing.
+
 ## Moving to a new computer
 
 On the old one:
