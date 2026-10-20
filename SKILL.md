@@ -19,6 +19,7 @@ python3 $M ls | todo [vpn] | log
 python3 $M sync              # pull (rebase; autostash if dirty) and push local commits
 python3 $M new photos "照片" "家里照片的存放和备份"   # scaffold a section, list it in README + AGENTS.md
 python3 $M lint              # README length, 更新/要点 headers, stale notes, todo size, broken links, glossary
+python3 $M eval              # hit@1 / hit@3 of search over evals.md, glossary 见-links and article titles
 python3 $M check [paths]     # secret scan (also the git pre-commit hook)
 python3 $M save vpn/servers.md vpn/todo.md -m "vpn: …" --trailer "Claude-Session: …"
 python3 $M secret find|put|get|refs|hashes …      # Bitwarden pointers via bitwarden-use (optional)
@@ -48,7 +49,9 @@ When a hook line says `memory-use: the notes know about X` (on a user message) o
 3. A term expands through `glossary.md`, so any alias of a machine or service works. If a search misses because of a new nickname, add it to the glossary.
 4. Treat notes as leads, not truth: paths, ports and hosts may have changed. Verify on the machine before acting, and fix the note if it was wrong.
 
-Answer "我们之前怎么弄的 / how did we do X" from the repo first, quoting the file (`vpn/warp-switch.md`), before touching machines.
+Answer "我们之前怎么弄的 / how did we do X" from the repo first, quoting the file (`vpn/warp-switch.md`), before touching machines. When `brief` says `no match`, tell the user the notes don't cover it; don't fill the gap from general knowledge as if it were their setup.
+
+When recall missed — `brief` did not surface a note that turned out to hold the answer — add the question to the notes repo's `evals.md` as `- <the words you searched> → <section>/<article>.md`, and fix the cause if it is obvious (a missing glossary alias, a vague title, a `见 article.md` pointer). `eval` then keeps that question answered as the notes grow.
 
 ## After work (save)
 

@@ -205,6 +205,29 @@ class MemoryUseTest(unittest.TestCase):
         rc, out = hook("check the nas section")                               # section names count too
         self.assertIn("nas", out)
 
+    def test_glossary_pointer_ranks_its_article_first(self):
+        (self.root / "nas" / "README.md").write_text("# NAS\n\n## 出口\n\nofficemac officemac officemac 出口\n")
+        rc, out = self.run_cmd("search", "officemac")
+        self.assertIn("nas/README.md", out.splitlines()[0])                   # most mentions win without a pointer
+        self._glossary("- officemac / jp2 — 办公室 Mac，见 nas/office.md\n")
+        rc, out = self.run_cmd("search", "jp2")
+        self.assertIn("nas/office.md", out.splitlines()[0], out)
+
+    def test_eval_reports_hits_and_misses(self):
+        self._glossary("- officemac / jp2 — 办公室 Mac，见 nas/office.md\n")
+        (self.root / "evals.md").write_text("# evals\n\n- lucky 443 → nas/lucky.md\n- 改密码 -> nas/office.md\n")
+        rc, out = self.run_cmd("eval")
+        self.assertEqual(rc, 0)
+        rows = {l.split()[0]: l.split() for l in out.splitlines() if l and l.split()[0] in ("evals.md", "glossary", "title", "all")}
+        self.assertEqual(rows["evals.md"][1:3], ["2", "50%"])                  # lucky first; 改密码 lives in todo.md
+        self.assertEqual(rows["glossary"][1:3], ["1", "100%"])
+        self.assertIn("'改密码' → nas/office.md at miss", out)
+        (self.root / "evals.md").unlink()
+        self._glossary("")
+        for p in (self.root / "nas").glob("*.md"):
+            p.unlink()
+        self.assertEqual(self.run_cmd("eval")[0], 1)
+
     def test_prompt_hook_once_per_session_and_ignores_paths(self):
         self.addCleanup(setattr, mu, "STATE_DIR", mu.STATE_DIR)
         mu.STATE_DIR = Path(self.tmp.name) / "state"

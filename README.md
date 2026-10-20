@@ -41,6 +41,7 @@ memory-use search nas backup    # ranked search; glossary aliases expand each te
 memory-use save vpn/servers.md -m "vpn: new exit node"   # secret-scan, commit only these files, pull --rebase, push
 memory-use new photos "Photos" "where photos live and how they are backed up"
 memory-use lint                # article headers, README length, stale notes, broken links
+memory-use eval                # how often search ranks the right note first (evals.md, glossary 见-links, titles)
 ```
 
 For a focused topic, `brief` keeps at most two chunks per note, drops weak matches, and includes only matching todos, summary lines, and commit subjects. A section name or its alias alone (`brief nas` / `brief pan`), or no topic, retains the section overview. `--max 1500` caps the context body including its truncation notice (minimum 128 characters). Repeating a term or its synonyms does not change its weight; `#` inside Markdown code fences is not a heading.

@@ -41,6 +41,7 @@ memory-use search nas backup    # 排序搜索；术语表里的别名会自动�
 memory-use save vpn/servers.md -m "vpn: 新出口节点"   # 查密钥、只提交这几个文件、pull --rebase、push
 memory-use new photos "照片" "照片放在哪、怎么备份"
 memory-use lint                # 文章开头格式、README 长度、过期笔记、坏链接
+memory-use eval                # 搜索把对的笔记排第一的比例（evals.md、术语表里的「见」链接、文章标题）
 ```
 
 `brief` 查询具体主题时，每篇笔记最多展示两个相关小节，略过弱匹配，只带入主题相关的待办、摘要行和提交标题。单独查询专栏名或它的别名（例如 `brief nas` / `brief pan`），或不带主题时，仍展示专栏概览。`--max 1500` 限制整个上下文正文的字符数，包括截断提示（最小 128）；重复输入同一术语的别名不会重复计分。Markdown 代码块中的 `#` 不作为标题。

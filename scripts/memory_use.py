@@ -210,11 +210,30 @@ def chunks(root: Path, include_archive: bool = False) -> list[dict]:
     return out
 
 
+SEE_ARTICLE = re.compile(r"(?:见|see)\s*`?([\w./-]+\.md)", re.I)
+
+
+def glossary_pointers(root: Path) -> dict[str, list[str]]:
+    """alias → the articles its concept's description points at (`… — 家里的台式机，见 machines/leo-desktop.md`)."""
+    out: dict[str, list[str]] = {}
+    f = root / "glossary.md"
+    for line in f.read_text().splitlines() if f.exists() else []:
+        if not line.startswith("- "):
+            continue
+        names, _, desc = line[2:].partition(" — ")
+        files = [m for m in SEE_ARTICLE.findall(desc) if (root / m).exists()]
+        for alias in names.split(" / "):
+            if files and alias.strip():
+                out.setdefault(alias.strip().strip("`").lower(), []).extend(files)
+    return out
+
+
 def rank(root: Path, terms: list[str], include_archive: bool = False, top: int = 8) -> list[tuple[float, dict, list[tuple[int, str]]]]:
     glossary = load_glossary(root)
     groups = expand(terms, glossary)
     if not groups:
         return []
+    pointed = {f for g in groups for a in g for f in glossary_pointers(root).get(a.text, ())}
     cs = chunks(root, include_archive)
     n = len(cs) or 1
     counts = [[(hits(c["heading"], g), hits(c["text"], g),
@@ -236,6 +255,8 @@ def rank(root: Path, terms: list[str], include_archive: bool = False, top: int =
             score *= 0.8
         if named and " › " not in c["path"]:
             score *= 2            # a whole article named after the topic beats a section that mentions it
+        if c["file"] in pointed:
+            score *= 2            # the glossary says "见 this article" for the concept asked about
         if c["file"] == "glossary.md":
             score *= 0.2          # the glossary names everything; it should not crowd out the notes
         c["matched"] = matched
@@ -1284,6 +1305,63 @@ def cmd_search(a) -> int:
     return 0
 
 
+EVAL_LINE = re.compile(r"^\s*-\s+(.+?)\s*(?:→|->)\s*`?([\w./-]+\.md)`?\s*$")
+
+
+def eval_cases(root: Path) -> list[tuple[str, str, str]]:
+    """(source, query, expected file). evals.md: `- query words → section/article.md`, written by hand from real
+    questions. glossary: a concept whose description says 见/see an article. title: an article's H1."""
+    cases: list[tuple[str, str, str]] = []
+    f = root / "evals.md"
+    if f.exists():
+        cases += [("evals.md", m[1], m[2]) for m in map(EVAL_LINE.match, f.read_text().splitlines()) if m]
+    g = root / "glossary.md"
+    if g.exists():
+        for line in g.read_text().splitlines():
+            m = SEE_ARTICLE.search(line)
+            if line.startswith("- ") and m and (root / m[1]).exists():
+                names = re.split(r"\s+—\s+", line[2:], maxsplit=1)[0]
+                cases.append(("glossary", names.split(" / ")[0].strip().strip("`"), m[1]))   # every alias ranks alike
+    for p in md_files(root):
+        rel = str(p.relative_to(root))
+        if "/" in rel and p.name not in ("README.md", "todo.md"):
+            title = next((l[2:].strip() for l in p.read_text(errors="ignore").splitlines() if l.startswith("# ")), "")
+            if title:
+                cases.append(("title", title, rel))
+    return cases
+
+
+def cmd_eval(a) -> int:
+    """How often search puts the right article first (hit@1), in the top 3, and its mean reciprocal rank.
+    MemT's coding agents gained more from picking the right experience than from where it was stored."""
+    d = need_repo()
+    cases = eval_cases(d)
+    if not cases:
+        print("no eval cases — add `- <question words> → <section>/<article>.md` lines to evals.md")
+        return 1
+    stats: dict[str, list[float]] = {}
+    misses = []
+    for source, query, want in cases:
+        files: list[str] = []
+        for _s, c, _l in rank(d, query.split(), top=20):
+            if c["file"] not in files and c["file"] != "glossary.md":
+                files.append(c["file"])
+        pos = files.index(want) + 1 if want in files else 0
+        stats.setdefault(source, []).append(pos)
+        if pos != 1:
+            misses.append((source, query, want, pos, files[:3]))
+    print(f"{'source':<10} {'cases':>5} {'hit@1':>6} {'hit@3':>6} {'MRR':>5}")
+    for source, ps in [*stats.items(), ("all", [p for ps in stats.values() for p in ps])]:
+        n = len(ps)
+        print(f"{source:<10} {n:>5} {sum(p == 1 for p in ps) / n:>6.0%} {sum(0 < p <= 3 for p in ps) / n:>6.0%} "
+              f"{sum(1 / p for p in ps if p) / n:>5.2f}")
+    if misses and a.misses:
+        print(f"\nnot ranked first ({len(misses)}):")
+        for source, query, want, pos, got in misses[: a.misses]:
+            print(f"  [{source}] {query!r} → {want} at {pos or 'miss'}; top: {', '.join(got) or '-'}")
+    return 0
+
+
 def section_of(file: str) -> str:
     return file.split("/", 1)[0] if "/" in file else ""
 
@@ -1653,6 +1731,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("migrate", help="before leaving this computer: what is not on GitHub yet, and the one-liner for the new one")
     s.add_argument("--push", action="store_true", help="first push local commits (same as one autosync run)")
     s.set_defaults(fn=cmd_migrate)
+    s = sub.add_parser("eval", help="measure search: hit@1 / hit@3 / MRR over evals.md, glossary 见-links and article titles")
+    s.add_argument("--misses", type=int, default=15, help="list up to N queries not ranked first (0: none)")
+    s.set_defaults(fn=cmd_eval)
     s = sub.add_parser("hook", help="Claude Code hook entry points: prompt (UserPromptSubmit, JSON on stdin) | "
                                     "tool (PostToolUseFailure, JSON on stdin) | session (SessionStart)")
     s.add_argument("event", choices=["prompt", "tool", "session"]); s.set_defaults(fn=cmd_hook)
