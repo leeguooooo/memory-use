@@ -205,6 +205,8 @@ class MemoryUseTest(unittest.TestCase):
         self.assertEqual(out, "")
         rc, out = hook("check the nas section")                               # section names count too
         self.assertIn("nas", out)
+        rc, out = hook("<task-notification>\n<result>review of the nas script</result>\n</task-notification>")
+        self.assertEqual(out, "")                                             # a background agent's report
 
     def test_lint_review_interval_per_article(self):
         old = (mu.dt.date.today() - mu.dt.timedelta(days=200)).isoformat()
@@ -746,6 +748,15 @@ class SyncTest(unittest.TestCase):
         out = self.doctor()
         self.assertIn("OK   skill installed: Claude Code plugin memory-use@leeguooooo-plugins 0.2.0", out)
         self.assertNotIn("WARN skill installed", out)
+
+    def test_skill_linked_for_codex_and_hermes_only_when_installed(self):
+        mu.ensure_skill_links()
+        self.assertFalse((self.home / ".hermes" / "skills" / "memory-use").exists())
+        for agent in (".codex", ".hermes"):
+            (self.home / agent / "skills").mkdir(parents=True)
+        mu.ensure_skill_links()
+        for agent in (".codex", ".hermes"):
+            self.assertEqual((self.home / agent / "skills" / "memory-use").resolve(), mu.TOOL_ROOT)
 
     def test_doctor_warns_when_plugin_and_link_both_load(self):
         self.install_plugin()

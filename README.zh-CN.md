@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/leeguooooo/memory-use/main/install.
 curl -fsSL https://raw.githubusercontent.com/leeguooooo/memory-use/main/install.sh | sh -s -- --repo 你/notes --create
 ```
 
-它会把 skill 链进 `~/.agents/skills`、`~/.claude/skills`（有 `~/.codex/skills` 也链），把 `memory-use` 命令放到 `~/.local/bin`，克隆笔记，启用提交前的密钥检查，打开自动同步。`memory-use doctor` 看状态。不在 GitHub 上也行：`--repo git@gitlab.com:你/notes.git`。
+它会把 skill 链进 `~/.agents/skills`、`~/.claude/skills`（装了 Codex / Hermes Agent 的，`~/.codex/skills`、`~/.hermes/skills` 也链），把 `memory-use` 命令放到 `~/.local/bin`，克隆笔记，启用提交前的密钥检查，打开自动同步。`memory-use doctor` 看状态。不在 GitHub 上也行：`--repo git@gitlab.com:你/notes.git`。
 
 也可以装整个家族：Claude Code 里 `/plugin install use-family@leeguooooo-plugins`，或者 [leeguooooo/plugins](https://github.com/leeguooooo/plugins) 的 `install-use-family.sh`；装完运行一次 `memory-use init --repo 你/notes`。
 

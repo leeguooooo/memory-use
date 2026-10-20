@@ -782,8 +782,9 @@ def claude_skill_link() -> Path:
 def skill_links() -> list[Path]:
     home = Path.home()
     out = [home / ".agents" / "skills" / "memory-use", home / ".claude" / "skills" / "memory-use"]
-    if (home / ".codex" / "skills").is_dir():
-        out.append(home / ".codex" / "skills" / "memory-use")
+    for agent in (".codex", ".hermes"):    # Codex and Hermes Agent read SKILL.md folders too, when installed
+        if (home / agent / "skills").is_dir():
+            out.append(home / agent / "skills" / "memory-use")
     return out
 
 
@@ -1491,6 +1492,9 @@ def cmd_lessons(_a) -> int:
     return 0
 
 
+TASK_NOTE = re.compile(r"<task-notification>.*?(?:</task-notification>|\Z)", re.S)
+
+
 def cmd_hook(a) -> int:
     """Claude Code hooks. prompt: nudge to recall when the message names something the notes know.
     tool: the same nudge when a failed command touches something the notes know (PostToolUseFailure).
@@ -1520,7 +1524,8 @@ def cmd_hook(a) -> int:
             ev = json.loads(raw, strict=False) if raw.strip().startswith("{") else {"prompt": raw}
         except ValueError:
             ev = {"prompt": raw}
-        prompt = str(ev.get("prompt") or "")
+        # a background agent finishing arrives as a prompt too; its report is not something the user asked about
+        prompt = TASK_NOTE.sub(" ", str(ev.get("prompt") or ""))
         if not prompt.strip() or not (d / ".git").exists():
             return 0
         # an absolute path pasted into the message (/Users/me/github.com/memory-use/…) is not a topic
