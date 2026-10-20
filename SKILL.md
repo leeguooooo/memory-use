@@ -20,6 +20,7 @@ python3 $M sync              # pull (rebase; autostash if dirty) and push local 
 python3 $M new photos "照片" "家里照片的存放和备份"   # scaffold a section, list it in README + AGENTS.md
 python3 $M lint              # README length, 更新/要点 headers, stale notes, near-duplicate articles, todo size, broken links, glossary
 python3 $M eval              # hit@1 / hit@3 of search over evals.md, glossary 见-links and article titles
+python3 $M lessons           # topics failed commands keep hitting across sessions; "rewrite this note" = pointed at, never fixed
 python3 $M check [paths]     # secret scan (also the git pre-commit hook)
 python3 $M save vpn/servers.md vpn/todo.md -m "vpn: …" --trailer "Claude-Session: …"
 python3 $M secret find|put|get|refs|hashes …      # Bitwarden pointers via bitwarden-use (optional)

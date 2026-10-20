@@ -1033,6 +1033,9 @@ def cmd_doctor(_a) -> int:
     if stt and not stt.get("ok"):
         line(False, "last autosync did not finish: " + str(stt.get("result")))
     line(KNOWN_SECRETS.exists(), f"known-secrets list (optional, outside git): {KNOWN_SECRETS}", warn=False)
+    stuck = [r["about"] for r in lesson_profile() if r["stuck"]]
+    line(not stuck, "notes that keep failing: " + (", ".join(stuck[:5]) + " — `memory-use lessons`" if stuck else "none"),
+         warn=False)
     return 0 if ok else 1
 
 
@@ -1289,6 +1292,7 @@ def note_lesson(sid: str, about: str) -> None:
     lessons = s.setdefault("lessons", [])
     if not any(x["about"] == about and not x.get("asked") for x in lessons):
         lessons.append({"about": about, "t": s["t"]})
+        log_lesson("failed", sid, about)
     save_session_store(seen)
 
 
@@ -1300,21 +1304,79 @@ def stop_reminder(d: Path, ev: dict) -> str | None:
     if not sid or ev.get("stop_hook_active"):
         return None
     seen = session_store()
-    lessons = [x for x in seen.get(sid, {}).get("lessons", []) if not x.get("asked")]
-    if not lessons:
+    lessons = seen.get(sid, {}).get("lessons", [])
+    open_ = [x for x in lessons if not x.get("saved")]
+    if not open_:
         return None
-    for x in lessons:
-        x["asked"] = True
-    save_session_store(seen)
-    since = min(x["t"] for x in lessons)
     # --since is inclusive and second-grained: a commit in the failure's own second predates the lesson
-    if git("log", f"--since=@{since + 1}", "--format=%h", cwd=d, check=False).stdout.strip():
-        return None            # something was saved after the failure; trust it
-    about = ", ".join(dict.fromkeys(x["about"] for x in lessons))
+    since = min(x["t"] for x in open_) + 1
+    commits = [int(c) for c in git("log", f"--since=@{since}", "--format=%ct", cwd=d, check=False).stdout.split()]
+    for x in open_:
+        if any(c > x["t"] for c in commits):          # saved after this failure (maybe after being asked)
+            x["saved"] = True
+            log_lesson("saved", sid, x["about"])
+    pending = [x for x in open_ if not x.get("saved") and not x.get("asked")]
+    for x in pending:
+        x["asked"] = True
+        log_lesson("asked", sid, x["about"])
+    save_session_store(seen)
+    if not pending:
+        return None
+    about = ", ".join(dict.fromkeys(x["about"] for x in pending))
     return (f"memory-use: earlier in this session a command failed on {about} and you were pointed at the notes. "
             "If you got past it with something the notes do not say yet (a cause, fix, flag or gotcha), write it into "
             "the matching article now, with the symptom and how you verified it, and `memory-use save` it. "
             "If nothing new was learned, or you are still stuck, just finish.")
+
+
+def log_lesson(event: str, sid: str, about: str) -> None:
+    """Append to STATE_DIR/lessons.jsonl, which outlives the day-long session store; `lessons` reads it."""
+    f = STATE_DIR / "lessons.jsonl"
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        with f.open("a") as out:
+            out.write(json.dumps({"t": int(time.time()), "event": event, "session": sid, "about": about}) + "\n")
+        if f.stat().st_size > 512_000:                    # keep the newest ~2000 events
+            f.write_text("\n".join(f.read_text().splitlines()[-2000:]) + "\n")
+    except OSError:
+        pass
+
+
+def lesson_profile() -> list[dict]:
+    """Per concept or article: the sessions where a command failed on it, and those where a fix was saved after.
+    MemT profiles its backbone before training (each task tried 8 times: reliably / occasionally / never solved);
+    a note that is pointed at session after session while nothing gets saved is not helping."""
+    rows: dict[str, dict] = {}
+    try:
+        lines = (STATE_DIR / "lessons.jsonl").read_text().splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        r = rows.setdefault(e["about"], {"about": e["about"], "failed": set(), "saved": set(), "last": 0})
+        if e["event"] in ("failed", "saved"):
+            r[e["event"]].add(e["session"])
+        r["last"] = max(r["last"], e["t"])
+    out = sorted(rows.values(), key=lambda r: (-len(r["failed"]), -r["last"]))
+    for r in out:
+        r["stuck"] = len(r["failed"]) >= 2 and not r["saved"]
+    return out
+
+
+def cmd_lessons(_a) -> int:
+    rows = lesson_profile()
+    if not rows:
+        print("no failures on noted topics recorded yet (the PostToolUseFailure hook records them)")
+        return 0
+    print(f"{'topic / note':<34} {'failed in':>9} {'fix saved':>9}  last")
+    for r in rows:
+        last = dt.datetime.fromtimestamp(r["last"]).strftime("%Y-%m-%d")
+        print(f"{r['about'][:34]:<34} {len(r['failed']):>9} {len(r['saved']):>9}  {last}"
+              + ("  ← keeps failing, nothing saved: rewrite this note" if r["stuck"] else ""))
+    return 0
 
 
 def cmd_hook(a) -> int:
@@ -1876,6 +1938,7 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("migrate", help="before leaving this computer: what is not on GitHub yet, and the one-liner for the new one")
     s.add_argument("--push", action="store_true", help="first push local commits (same as one autosync run)")
     s.set_defaults(fn=cmd_migrate)
+    sub.add_parser("lessons", help="topics and notes that failed commands were pointed at, and whether a fix got saved").set_defaults(fn=cmd_lessons)
     s = sub.add_parser("eval", help="measure search: hit@1 / hit@3 / MRR over evals.md, glossary 见-links and article titles")
     s.add_argument("--misses", type=int, default=15, help="list up to N queries not ranked first (0: none)")
     s.set_defaults(fn=cmd_eval)

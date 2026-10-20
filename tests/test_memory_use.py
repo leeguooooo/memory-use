@@ -356,6 +356,36 @@ class MemoryUseTest(unittest.TestCase):
         sh("git", "commit", "-qam", "nas: ssh port", cwd=self.root)
         self.assertEqual(stop("q2"), "")
 
+    def test_lessons_profile_flags_notes_that_keep_failing(self):
+        self.addCleanup(setattr, mu, "STATE_DIR", mu.STATE_DIR)
+        mu.STATE_DIR = Path(self.tmp.name) / "state"
+        def hook(event, payload):
+            sys_stdin = sys.stdin
+            sys.stdin = io.StringIO(json.dumps(payload))
+            try:
+                return self.run_cmd("hook", event)[1]
+            finally:
+                sys.stdin = sys_stdin
+        fail = lambda sid, host: hook("tool", {"session_id": sid, "tool_input": {"command": f"ssh {host}"}, "error": "Exit code 255"})
+        stop = lambda sid: hook("stop", {"session_id": sid, "stop_hook_active": False})
+        self.assertIn("no failures", self.run_cmd("lessons")[1])
+        for sid in ("p1", "p2"):                                  # nas fails in two sessions, nobody saves
+            fail(sid, "nas.example.com")
+            self.assertIn("decision", stop(sid))
+        fail("p3", "officemac")                                   # officemac: asked, then saved during the continuation
+        self.assertIn("decision", stop("p3"))
+        time.sleep(1.1)
+        (self.root / "nas" / "office.md").write_text(ARTICLE_OK + "\n出口改到 2222\n")
+        sh("git", "commit", "-qam", "nas: office exit", cwd=self.root)
+        self.assertEqual(stop("p3"), "")                          # the save is noticed even though it was already asked
+        rc, out = self.run_cmd("lessons")
+        rows = {l.split()[0]: l for l in out.splitlines()[1:]}
+        self.assertIn("rewrite this note", rows["nas"])
+        self.assertEqual(rows["nas"].split()[1:3], ["2", "0"])
+        self.assertEqual(rows["190"].split()[1:3], ["1", "1"])
+        self.assertNotIn("rewrite", rows["190"])
+        self.assertIn("notes that keep failing: nas", self.run_cmd("doctor")[1])
+
     def test_session_hook_silent_when_healthy(self):
         mu.STATE_FILE = Path(self.tmp.name) / "autosync.json"
         rc, out = self.run_cmd("hook", "session")
