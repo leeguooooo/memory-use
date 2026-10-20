@@ -219,6 +219,17 @@ class MemoryUseTest(unittest.TestCase):
         self.assertEqual(sorted(l.split()[1].rstrip(":") for l in stale), ["nas/lucky.md", "nas/old.md"], out)
         self.assertIn("review every 30", out)
 
+    def test_lint_flags_near_duplicate_articles(self):
+        a = "# 群晖备份到 B2\n\n> 更新：2026-10-01 · 状态：在用\n\n**要点**\n- Hyper Backup 每晚 3 点推到 B2 bucket nas-backup\n- 失败看 DSM 通知\n"
+        b = "# 群晖备份到 B2（新）\n\n> 更新：2026-10-10 · 状态：在用\n\n**要点**\n- Hyper Backup 每晚 3 点推到 B2 bucket nas-backup\n- 失败看 DSM 通知中心\n"
+        (self.root / "nas" / "backup.md").write_text(a)
+        (self.root / "nas" / "backup-new.md").write_text(b)
+        rc, out = self.run_cmd("lint")
+        dup = [l for l in out.splitlines() if "merge them" in l]
+        self.assertEqual(len(dup), 1, out)
+        self.assertIn("backup", dup[0])
+        self.assertNotIn("lucky.md", out.split("merge them")[0].rsplit("WARN", 1)[-1])   # unrelated articles stay quiet
+
     def test_glossary_pointer_ranks_its_article_first(self):
         (self.root / "nas" / "README.md").write_text("# NAS\n\n## 出口\n\nofficemac officemac officemac 出口\n")
         rc, out = self.run_cmd("search", "officemac")

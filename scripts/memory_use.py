@@ -1522,6 +1522,38 @@ REVIEW = re.compile(r"(?:复核|Review)[：:]\s*(?:(\d+)\s*(?:d|天|days?)\b|(�
 GATEWAY_IP = re.compile(r"(10|192\.168|172\.(1[6-9]|2\d|3[01]))(\.\d{1,3}){1,2}\.(1|254)")
 
 
+def gist_tokens(path: Path) -> set[str]:
+    """Words of an article's title and key points; CJK runs as character bigrams so 群晖备份 ~ 备份群晖."""
+    lines = path.read_text(errors="ignore").splitlines()
+    title = next((l[2:] for l in lines if l.startswith("# ")), "")
+    text = (title + "\n" + "\n".join(keypoints(path))).lower()
+    toks = {w for w in re.findall(r"[a-z0-9][a-z0-9._-]+", text)}
+    for run in re.findall(r"[\u3400-\u9fff]+", text):
+        toks.update(run[i:i + 2] for i in range(max(1, len(run) - 1)))
+    return toks
+
+
+def near_duplicates(root: Path, threshold: float = 0.6) -> list[tuple[str, str, float]]:
+    """Article pairs in one section whose title + key points overlap (Jaccard) at least `threshold`.
+    MemT clustered 3,678 induced experiences down to 1,200 before retrieval worked; two copies of a fact split
+    the score and the stale one can win."""
+    by_section: dict[str, list[tuple[str, set[str]]]] = {}
+    for p in md_files(root):
+        rel = str(p.relative_to(root))
+        if rel.count("/") >= 1 and p.name not in ("README.md", "todo.md"):
+            toks = gist_tokens(p)
+            if len(toks) >= 4:
+                by_section.setdefault(section_of(rel), []).append((rel, toks))
+    out = []
+    for arts in by_section.values():
+        for i, (a, ta) in enumerate(arts):
+            for b, tb in arts[i + 1:]:
+                j = len(ta & tb) / len(ta | tb)
+                if j >= threshold:
+                    out.append((a, b, j))
+    return out
+
+
 def cmd_lint(a) -> int:
     d = need_repo()
     warns: list[str] = []
@@ -1568,6 +1600,8 @@ def cmd_lint(a) -> int:
                 continue
             if not (p.parent / target).exists():
                 warns.append(f"{rel}: broken link → {target}")
+    for x, y, j in near_duplicates(d):
+        warns.append(f"{x}: title and key points {j:.0%} like {y} — merge them, or archive the older one")
     for g in load_glossary(d):
         for alias in g:
             if GATEWAY_IP.fullmatch(alias):

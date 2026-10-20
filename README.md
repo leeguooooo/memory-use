@@ -40,7 +40,7 @@ memory-use brief vpn warp      # context pack: best matching notes + key points,
 memory-use search nas backup    # ranked search; glossary aliases expand each term
 memory-use save vpn/servers.md -m "vpn: new exit node"   # secret-scan, commit only these files, pull --rebase, push
 memory-use new photos "Photos" "where photos live and how they are backed up"
-memory-use lint                # article headers, README length, stale notes, broken links
+memory-use lint                # article headers, README length, stale notes, near-duplicates, broken links
 memory-use eval                # how often search ranks the right note first (evals.md, glossary 见-links, titles)
 ```
 

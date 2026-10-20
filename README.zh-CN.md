@@ -40,7 +40,7 @@ memory-use brief vpn warp      # 上下文包：最相关的笔记和要点、�
 memory-use search nas backup    # 排序搜索；术语表里的别名会自动展开
 memory-use save vpn/servers.md -m "vpn: 新出口节点"   # 查密钥、只提交这几个文件、pull --rebase、push
 memory-use new photos "照片" "照片放在哪、怎么备份"
-memory-use lint                # 文章开头格式、README 长度、过期笔记、坏链接
+memory-use lint                # 文章开头格式、README 长度、过期笔记、重复文章、坏链接
 memory-use eval                # 搜索把对的笔记排第一的比例（evals.md、术语表里的「见」链接、文章标题）
 ```
 
