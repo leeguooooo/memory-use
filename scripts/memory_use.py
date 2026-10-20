@@ -1475,26 +1475,39 @@ def cmd_search(a) -> int:
 EVAL_LINE = re.compile(r"^\s*-\s+(.+?)\s*(?:→|->)\s*`?([\w./-]+\.md)`?\s*$")
 
 
-def eval_cases(root: Path) -> list[tuple[str, str, str]]:
-    """(source, query, expected file). evals.md: `- query words → section/article.md`, written by hand from real
-    questions. glossary: a concept whose description says 见/see an article. title: an article's H1."""
-    cases: list[tuple[str, str, str]] = []
+def eval_cases(root: Path) -> list[tuple[str, str, str, str]]:
+    """(source, query, expected file, file to leave out of the ranking: the README a symptom was taken from). evals.md: `- query words → section/article.md`, written by hand from real
+    questions. glossary: a concept whose description says 见/see an article. trouble: a symptom in a section README's
+    troubleshooting table whose fix cell links an article (MemT's trigger context → experience). title: an H1."""
+    cases: list[tuple[str, str, str, str]] = []
     f = root / "evals.md"
     if f.exists():
-        cases += [("evals.md", m[1], m[2]) for m in map(EVAL_LINE.match, f.read_text().splitlines()) if m]
+        cases += [("evals.md", m[1], m[2], "") for m in map(EVAL_LINE.match, f.read_text().splitlines()) if m]
     g = root / "glossary.md"
     if g.exists():
         for line in g.read_text().splitlines():
             m = SEE_ARTICLE.search(line)
             if line.startswith("- ") and m and (root / m[1]).exists():
                 names = re.split(r"\s+—\s+", line[2:], maxsplit=1)[0]
-                cases.append(("glossary", names.split(" / ")[0].strip().strip("`"), m[1]))   # every alias ranks alike
+                cases.append(("glossary", names.split(" / ")[0].strip().strip("`"), m[1], ""))   # every alias ranks alike
+    for readme in sorted(root.glob("*/README.md")):
+        rows = re.split(r"^##\s+(?:出问题先看这里|Troubleshooting|If something breaks)\s*$", readme.read_text(), flags=re.M | re.I)
+        for line in rows[1].split("\n## ")[0].splitlines() if len(rows) > 1 else []:
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) < 2 or set(cells[0]) <= set("-: ") or cells[0] in ("现象", "Symptom"):
+                continue
+            for target in re.findall(r"\]\(([^)#\s]+\.md)|(?<![\w/.(])([\w.-]+\.md)\b", cells[1]):
+                f = (readme.parent / (target[0] or target[1])).resolve()
+                if f.exists() and f.name != "README.md" and root.resolve() in f.parents:
+                    cases.append(("trouble", cells[0].replace("`", ""), str(f.relative_to(root.resolve())),
+                                  str(readme.relative_to(root))))
+                    break
     for p in md_files(root):
         rel = str(p.relative_to(root))
         if "/" in rel and p.name not in ("README.md", "todo.md"):
             title = next((l[2:].strip() for l in p.read_text(errors="ignore").splitlines() if l.startswith("# ")), "")
             if title:
-                cases.append(("title", title, rel))
+                cases.append(("title", title, rel, ""))
     return cases
 
 
@@ -1508,10 +1521,10 @@ def cmd_eval(a) -> int:
         return 1
     stats: dict[str, list[float]] = {}
     misses = []
-    for source, query, want in cases:
+    for source, query, want, skip in cases:
         files: list[str] = []
         for _s, c, _l in rank(d, query.split(), top=20):
-            if c["file"] not in files and c["file"] != "glossary.md":
+            if c["file"] not in files and c["file"] not in ("glossary.md", skip):
                 files.append(c["file"])
         pos = files.index(want) + 1 if want in files else 0
         stats.setdefault(source, []).append(pos)

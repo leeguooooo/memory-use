@@ -41,7 +41,7 @@ memory-use search nas backup    # ranked search; glossary aliases expand each te
 memory-use save vpn/servers.md -m "vpn: new exit node"   # secret-scan, commit only these files, pull --rebase, push
 memory-use new photos "Photos" "where photos live and how they are backed up"
 memory-use lint                # article headers, README length, stale notes, near-duplicates, broken links
-memory-use eval                # how often search ranks the right note first (evals.md, glossary 见-links, titles)
+memory-use eval                # how often search ranks the right note first (evals.md, glossary 见-links, troubleshooting rows, titles)
 memory-use lessons             # notes that failed commands keep running into, and whether a fix was ever saved
 ```
 
