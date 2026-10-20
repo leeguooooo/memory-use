@@ -1361,6 +1361,10 @@ def tool_failure_nudge(d: Path, ev: dict) -> str | None:
     cmd = str(inp.get("command") or inp.get("file_path") or "")
     if re.match(r"\s*(memory-use|python3?\s+\S*memory_use\.py)\b", cmd):
         return None
+    home = Path.home()
+    names = {str(d)} | ({"~/" + d.relative_to(home).as_posix()} if d.is_relative_to(home) else set())
+    if any(n in cmd for n in names):
+        return None                # working on the notes themselves: their text is in the output, not the problem
     sid = str(ev.get("session_id") or "")
     err = re.sub(r"^Exit code \d+\s*", "", str(ev.get("error") or ""))[:2000]
     times = failure_count(sid, cmd)

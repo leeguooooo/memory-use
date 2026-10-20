@@ -303,6 +303,8 @@ class MemoryUseTest(unittest.TestCase):
         self.assertEqual(hook("npm test", "Exit code 1\n3 failing")[1], "")      # nothing the notes know
         self.assertEqual(hook("ssh nas.example.com", "x", sid="s3", is_interrupt=True)[1], "")
         self.assertEqual(hook("memory-use search nas", "Exit code 1", sid="s4")[1], "")   # our own command
+        self.assertEqual(hook(f"cd {self.root} && head nas/zh.md; echo ===", "Exit code 1\n# NAS\n(eval):1: == not found",
+                              sid="s5")[1], "")                                # editing the notes: their text isn't the problem
 
     def test_tool_failure_hook_searches_on_third_identical_failure(self):
         self.addCleanup(setattr, mu, "STATE_DIR", mu.STATE_DIR)
