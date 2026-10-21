@@ -4,7 +4,7 @@
 
 [项目介绍](../README.zh-CN.md) · [使用指南](guide.zh-CN.md)
 
-本文对应 v0.4.1 的实际实现。记忆仍是你私有 Git 仓库中的 Markdown。项目自带的失败与收尾钩子适用于 Claude Code；其他 agent 可以使用 CLI 和技能约定。
+本文对应 v0.4.2 的实际实现。记忆仍是你私有 Git 仓库中的 Markdown。项目自带的失败与收尾钩子适用于 Claude Code；其他 agent 可以使用 CLI 和技能约定。
 
 ## 从失败到经验的流程
 
@@ -24,16 +24,16 @@ flowchart LR
 
 | 机制 | 实现方式 | 用户收益 |
 | --- | --- | --- |
-| 已知失败触发召回 | `PostToolUseFailure` 从命令和错误中识别已知概念，提示运行 `brief`；排除中断和操作笔记自身的命令。 | 再次重试之前，先查已有处理方法。 |
-| 重复失败后检索 | 按空白规范化后的命令前缀（最多 300 字符）累计，第三次及以后失败时搜索命令与错误里的词；排除通用启动器，并要求首条笔记匹配程序名及至少两组词。 | 减少仅因共享普通错误词而产生的误提示。 |
+| 已知失败触发召回 | `PostToolUseFailure` 从诊断输出或精确解析的操作目标中识别已知概念，提示运行 `brief`；排除中断和操作笔记自身的命令。 | 再次重试之前，先查已有处理方法。 |
+| 重复失败后检索 | 按空白规范化后的命令前缀（最多 300 字符）累计，第三次及以后失败时搜索程序名与诊断词；排除通用启动器，并要求首条笔记匹配程序名及至少两组词。 | 减少仅因共享普通错误词而产生的误提示。 |
 | 会话内去重 | 按会话记录已提示的概念与文章入口，保留最近 24 小时的会话状态。 | 重试过程中不反复刷同一个提示。 |
-| 结束前提醒写回 | 被引导查笔记的失败之后，`Stop` 询问是否有新原因、修复或验证方法值得入库；后续再失败可重新触发提醒。 | 让 agent 在结束当前轮次之前留下有用经验。 |
+| 结束前提醒写回 | 被引导查笔记的失败之后，`Stop` 询问是否有新原因、修复或验证方法值得入库；同一话题、同一会话只提醒一次，后续失败不再触发，并兼容旧状态的重复记录。 | 让 agent 在结束当前轮次之前留下有用经验。 |
 | 按文章复核 | `Review` 元数据控制时效提醒，默认 120 天，也可自定义或设为 `never`；已废弃状态继续展示。 | 对易变的运维事实及时复核，稳定笔记无需每次读取都刷新日期。 |
 | 相似笔记检查 | `lint` 在同一专栏内，按标题与要点的 token 集合计算 Jaccard 重叠，默认阈值 0.6。 | 找到可能需要合并的内容，再单独判断是否合并。 |
 | 重复失败诊断 | `lessons` 按主题、会话汇总失败和保存事件；至少两个会话失败且没有保存记录时标记出来。 | 找出反复被查阅，却没有记录到后续更新的文档。 |
 | 检索评测 | 外部问题集分别检查去重后的文件排名，以及目标片段是否进入最终字符预算。 | 调整搜索前，先分清漏在检索、筛选还是预算阶段。 |
 
-源码入口：[`tool_failure_nudge`](https://github.com/leeguooooo/memory-use/blob/ff45c52104affa173514d94243e69ec7c94d006c/scripts/memory_use.py#L1576)、[`stop_reminder`](https://github.com/leeguooooo/memory-use/blob/ff45c52104affa173514d94243e69ec7c94d006c/scripts/memory_use.py#L1634)、[`lesson_profile`](https://github.com/leeguooooo/memory-use/blob/ff45c52104affa173514d94243e69ec7c94d006c/scripts/memory_use.py#L1681)、[`review_warning`](https://github.com/leeguooooo/memory-use/blob/ff45c52104affa173514d94243e69ec7c94d006c/scripts/memory_use.py#L2183)、[`near_duplicates`](https://github.com/leeguooooo/memory-use/blob/ff45c52104affa173514d94243e69ec7c94d006c/scripts/memory_use.py#L2218)。
+源码入口：[`tool_failure_nudge`](https://github.com/leeguooooo/memory-use/blob/v0.4.2/scripts/memory_use.py#L1576)、[`stop_reminder`](https://github.com/leeguooooo/memory-use/blob/v0.4.2/scripts/memory_use.py#L1634)、[`lesson_profile`](https://github.com/leeguooooo/memory-use/blob/v0.4.2/scripts/memory_use.py#L1681)、[`review_warning`](https://github.com/leeguooooo/memory-use/blob/v0.4.2/scripts/memory_use.py#L2183)、[`near_duplicates`](https://github.com/leeguooooo/memory-use/blob/v0.4.2/scripts/memory_use.py#L2218)。
 
 ## 证据与边界
 
@@ -49,7 +49,7 @@ flowchart LR
 
 ## 由 agent 决定导入：仍未补齐
 
-v0.4.1 没有统一导入本机多个 Hermes profile、Claude Code、Codex 记忆及历史记录的流程。`migrate` 负责检查换机准备情况，并报告不会跟随迁移的本地材料，不负责筛选或导入这些记录。
+v0.4.2 没有统一导入本机多个 Hermes profile、Claude Code、Codex 记忆及历史记录的流程。`migrate` 负责检查换机准备情况，并报告不会跟随迁移的本地材料，不负责筛选或导入这些记录。
 
 要做成完整的导入，需要以下流程：
 

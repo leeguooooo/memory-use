@@ -4,7 +4,7 @@
 
 [Overview](../README.md) · [User guide](guide.md)
 
-This describes the implementation shipped in v0.4.1. Memory remains editable Markdown in your private Git repository. The package's automatic failure and end-of-turn hooks are for Claude Code; other agents can use the CLI and skill workflow.
+This describes the implementation shipped in v0.4.2. Memory remains editable Markdown in your private Git repository. The package's automatic failure and end-of-turn hooks are for Claude Code; other agents can use the CLI and skill workflow.
 
 ## The feedback loop
 
@@ -24,16 +24,16 @@ The agent decides whether it learned a reusable fix. The hook supplies a pointer
 
 | Mechanism | Implementation | Benefit |
 | --- | --- | --- |
-| Recall on a known failure | `PostToolUseFailure` matches concepts in the command and error, then points to `brief`. Interrupts and commands working on the notes themselves are excluded. | Consult a relevant procedure before another retry. |
-| Search after repeated failure | From the third failure of a space-normalized command prefix (up to 300 characters), search the command/error terms. Generic launchers are excluded; the best note must match the program and at least two term groups. | Reduce pointers caused only by generic error words. |
+| Recall on a known failure | `PostToolUseFailure` matches concepts in diagnostic output or exact parsed operation targets, then points to `brief`. Interrupts and commands working on the notes themselves are excluded. | Consult a relevant procedure before another retry. |
+| Search after repeated failure | From the third failure of a space-normalized command prefix (up to 300 characters), search the program name and diagnostic terms. Generic launchers are excluded; the best note must match the program and at least two term groups. | Reduce pointers caused only by generic error words. |
 | Session deduplication | Track concepts and article pointers by session; recent session state is retained for 24 hours. | Avoid repeating the same nudge through a retry loop. |
-| Writeback before context is lost | After a noted failure, `Stop` asks whether a newly learned cause, fix or verification belongs in an article. A later failure can re-arm the reminder. | Give the agent a chance to retain useful knowledge before ending its turn. |
+| Writeback before context is lost | After a noted failure, `Stop` asks whether a newly learned cause, fix or verification belongs in an article. Each topic is asked once per session; later failures do not re-arm it, including when older state contains duplicate lessons. | Give the agent a chance to retain useful knowledge before ending its turn. |
 | Freshness by article | `Review` metadata controls the age warning: 120 days by default, a custom interval, or `never`. Deprecated notes remain visibly marked. | Review changing operational facts without rewriting stable notes on every read. |
 | Duplicate candidates | `lint` compares titles and key points within each section using token-set Jaccard overlap, default threshold 0.6. | Find notes that may need consolidation; merging stays a separate decision. |
 | Recurring-failure visibility | `lessons` groups failure/save events by topic and session. Two or more failed sessions with no recorded save are flagged. | Find documentation that keeps being consulted without producing a recorded update. |
 | Retrieval evaluation | External question sets measure distinct-file rank and presence of an excerpt in the final character budget. | Locate retrieval, selection and budget losses before tuning search. |
 
-Source: [`tool_failure_nudge`](https://github.com/leeguooooo/memory-use/blob/ff45c52104affa173514d94243e69ec7c94d006c/scripts/memory_use.py#L1576), [`stop_reminder`](https://github.com/leeguooooo/memory-use/blob/ff45c52104affa173514d94243e69ec7c94d006c/scripts/memory_use.py#L1634), [`lesson_profile`](https://github.com/leeguooooo/memory-use/blob/ff45c52104affa173514d94243e69ec7c94d006c/scripts/memory_use.py#L1681), [`review_warning`](https://github.com/leeguooooo/memory-use/blob/ff45c52104affa173514d94243e69ec7c94d006c/scripts/memory_use.py#L2183), and [`near_duplicates`](https://github.com/leeguooooo/memory-use/blob/ff45c52104affa173514d94243e69ec7c94d006c/scripts/memory_use.py#L2218).
+Source: [`tool_failure_nudge`](https://github.com/leeguooooo/memory-use/blob/v0.4.2/scripts/memory_use.py#L1576), [`stop_reminder`](https://github.com/leeguooooo/memory-use/blob/v0.4.2/scripts/memory_use.py#L1634), [`lesson_profile`](https://github.com/leeguooooo/memory-use/blob/v0.4.2/scripts/memory_use.py#L1681), [`review_warning`](https://github.com/leeguooooo/memory-use/blob/v0.4.2/scripts/memory_use.py#L2183), and [`near_duplicates`](https://github.com/leeguooooo/memory-use/blob/v0.4.2/scripts/memory_use.py#L2218).
 
 ## Evidence and limits
 
@@ -49,7 +49,7 @@ These mechanisms have specific boundaries:
 
 ## Agent-decided import: still missing
 
-v0.4.1 has no unified importer for the memories and histories of local Hermes profiles, Claude Code and Codex. `migrate` checks migration readiness and reports local material that does not travel; it does not select or ingest those records.
+v0.4.2 has no unified importer for the memories and histories of local Hermes profiles, Claude Code and Codex. `migrate` checks migration readiness and reports local material that does not travel; it does not select or ingest those records.
 
 An importer needs the following workflow before it can count as complete:
 

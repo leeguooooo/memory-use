@@ -101,7 +101,7 @@ Write back whenever the work produced something a future session needs: a new se
 
 `check` flags private keys, GitHub/OpenAI/Anthropic/AWS/Slack tokens, JWTs, SSH public key blobs, and assignments in English or Chinese (`password=…`, `密码：…`, `密码是 …`, `口令 = …`); pointers, paths and prose (`bw:…`, `~/.ssh/…`, `secrets.env`, `不记录，问 X`) pass. Real secrets listed one per line in `~/.config/memory-use/known-secrets` (outside git, chmod 600) are caught verbatim; with bitwarden-use, `secret hashes` catches every password in the vault's `memory` folder by hash. The pre-commit hook blocks any commit, even one made with plain git.
 
-`secret put "<name>"` (value on stdin, or `--generate 24`) stores into Bitwarden and prints the `🔑 bw:<uuid>` pointer for the note; `secret get bw:<uuid> --copy` or `--env VAR -- cmd` uses it without printing.
+`secret put "<name>"` accepts a single-line password on stdin, or `--generate 24`, and reports a `🔑 bw:<uuid>` pointer only after checking the new item and exact readback. Multiline secrets and private-key blocks are refused before writing; use `bwu item put` with native SSH-key or secure-note JSON. If verification fails, the item may already exist: inspect it before retrying rather than creating another copy. `secret get bw:<uuid> --copy` or `--env VAR -- cmd` uses a value without printing.
 
 ## Dates, reminders, birthdays
 

@@ -51,8 +51,8 @@ memory-use lessons             # 哪些笔记反复撞上命令失败、事后�
 AI 常常想不起先查笔记。Claude Code 插件自带四个钩子（`hooks/hooks.json`）：
 
 - **UserPromptSubmit**：你的话里提到笔记认识的东西（术语表里的任何别名，包括「windows 电脑」这种口语叫法，或者专栏名），AI 会收到一行提示：`the notes know about leo-desktop — 先 memory-use brief leo-desktop`。没提到就什么都不加；约 50 ms，纯标准库。
-- **PostToolUseFailure**（Bash）：命令失败了，而命令本身或报错里提到笔记认识的东西，AI 在重试之前会收到同样的提示：`that command failed and the notes know about nas — 先 memory-use brief nas`。同一条命令第三次失败、又没提到任何已知的东西时，会拿命令名和报错里的词去搜全部笔记，命中一篇提到这个命令的笔记才提醒。同一个会话里每个东西、每篇笔记只提醒一次，反复重试不会刷屏。
-- **Stop**：出过上面那种失败提醒、而且之后笔记仓库没有新提交时，AI 准备结束这一轮前会被问一次：绕过这个失败的办法要不要写进笔记。其余时候不说话。（PreCompact 和 SessionEnd 的输出到不了 AI，这里是上下文被压缩掉之前最后一次能把经验记下来的机会。）
+- **PostToolUseFailure**（Bash）：命令失败了，而诊断输出或解析出的操作目标能对应已有笔记，AI 在重试之前会收到同样的提示：`that command failed and the notes know about nas — 先 memory-use brief nas`。普通 shell、路径不存在和编码错误保持安静，引用文本和无关文件参数不参与话题判断。同一条命令第三次失败、又没提到任何已知的东西时，会拿程序名和诊断词去搜全部笔记，命中一篇提到这个命令的笔记才提醒。同一个会话里每个东西、每篇笔记只提醒一次，反复重试不会刷屏。
+- **Stop**：出过上面那种失败提醒、而且之后笔记仓库没有新提交时，AI 准备结束这一轮前对同一话题、同一会话最多问一次：绕过这个失败的办法要不要写进笔记。后续同话题失败不会再次触发。其余时候不说话。（PreCompact 和 SessionEnd 的输出到不了 AI，这里是上下文被压缩掉之前最后一次能把经验记下来的机会。）
 - **SessionStart**：只有笔记仓库没接上、或自动同步卡住时才说话。
 
 用 `install.sh` 装、没装插件的话，把下面这段加进 `~/.claude/settings.json`：
@@ -95,7 +95,7 @@ memory-use migrate --push   # 先推上去
 
 ## 密钥
 
-提交前钩子（以及 `save`、`check`）会拒绝看起来像密钥的内容：私钥，GitHub / OpenAI / Anthropic / AWS / Slack 令牌，JWT，还有中英文的赋值写法（`password: …`、`密码：…`、`路由器密码是 …`）。指针和说明文字能通过（`🔑 bw:<uuid>`、`~/.ssh/id_ed25519`、`在 secrets.env 里`）。配合 [bitwarden-use](https://github.com/leeguooooo/bitwarden-use)，`memory-use secret put` 存值并打印指针，`secret hashes` 让钩子按哈希拦下密码库 `memory` 文件夹里的任何密码。装了 [profile-use](https://github.com/leeguooooo/profile-use) 时，钩子还会拦个人资料。
+提交前钩子（以及 `save`、`check`）会拒绝看起来像密钥的内容：私钥，GitHub / OpenAI / Anthropic / AWS / Slack 令牌，JWT，还有中英文的赋值写法（`password: …`、`密码：…`、`路由器密码是 …`）。指针和说明文字能通过（`🔑 bw:<uuid>`、`~/.ssh/id_ed25519`、`在 secrets.env 里`）。配合 [bitwarden-use](https://github.com/leeguooooo/bitwarden-use)，`memory-use secret put` 接收单行密码，核对新条目和回读内容后才打印指针；多行内容和私钥块应使用原生 `bwu item put` JSON，`secret hashes` 让钩子按哈希拦下密码库 `memory` 文件夹里的任何密码。装了 [profile-use](https://github.com/leeguooooo/profile-use) 时，钩子还会拦个人资料。
 
 ## 配置
 

@@ -16,6 +16,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -24,7 +25,7 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 TOOL_REPO = "leeguooooo/memory-use"
 INSTALL_URL = f"https://raw.githubusercontent.com/{TOOL_REPO}/main/install.sh"
 DEFAULT_NAME = "personal-memory"
@@ -538,6 +539,17 @@ def pointer(item: dict) -> str:
     return f"bw:{item['id']}（{item.get('name')}）"
 
 
+def single_line_secret(text: str) -> str:
+    """Accept one optional terminal line ending, never discard additional lines."""
+    value = text[:-2] if text.endswith("\r\n") else text[:-1] if text.endswith("\n") else text
+    if not value:
+        sys.exit("no value on stdin")
+    if "\n" in value or "\r" in value or re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----", value):
+        sys.exit("multiline secrets and private-key blocks are not supported by secret put; nothing was written. "
+                 "Use `bwu item put` with a native SSH-key or secure-note JSON item instead.")
+    return value
+
+
 def cmd_secret(a) -> int:
     if a.action == "find":
         terms = [t.lower() for t in a.args]
@@ -551,20 +563,43 @@ def cmd_secret(a) -> int:
         if not a.args:
             sys.exit('usage: secret put <name> [user] [--generate N]   (value on stdin unless --generate)')
         name, user = a.args[0], (a.args[1] if len(a.args) > 1 else None)
-        if a.generate:
-            r = bwu_confirmed("generate", str(a.generate), name, *([user] if user else []), "--folder", SECRET_FOLDER)
+        if a.generate is not None:
+            if a.generate < 1:
+                sys.exit("--generate must be positive")
+            generated = bwu("generate", str(a.generate))  # no name: generate in memory, without a vault write
+            if generated.returncode:
+                sys.exit("password generation failed (values hidden); nothing was written")
+            value = single_line_secret(generated.stdout)
+            if len(value) != a.generate:
+                sys.exit("generated password length did not match; nothing was written")
         else:
-            value = sys.stdin.read().rstrip("\n")
-            if not value:
-                sys.exit("no value on stdin")
-            r = bwu_confirmed("add", name, *([user] if user else []), "--folder", SECRET_FOLDER, stdin=value + "\n")
+            value = single_line_secret(sys.stdin.read())
+        if bwu("sync").returncode:
+            sys.exit("vault sync failed before writing; nothing was written")
+        before = {i["id"] for i in vault_items()}
+        r = bwu_confirmed("add", name, *([user] if user else []), "--folder", SECRET_FOLDER, stdin=value + "\n")
+        uncertain = ("vault write was not verified; it may already exist. Inspect the named item before retrying. "
+                     "No pointer was reported (values hidden).")
         if r.returncode:
-            sys.exit("bitwarden-use failed: " + (r.stderr.strip() or r.stdout.strip()))
-        bwu("sync")
-        new = [i for i in vault_items() if i.get("name") == name and (i.get("folder") or "") == SECRET_FOLDER]
-        if not new:
-            sys.exit("stored, but could not find it again — run `secret find " + name + "`")
-        print("stored in Bitwarden folder '" + SECRET_FOLDER + "'. Put this in the note:\n  🔑 " + pointer(new[-1]))
+            sys.exit(uncertain)
+        if bwu("sync").returncode:
+            sys.exit(uncertain)
+        try:
+            after = vault_items()
+        except SystemExit:
+            sys.exit(uncertain)
+        new = [i for i in after if i["id"] not in before and i.get("name") == name
+               and (i.get("folder") or "") == SECRET_FOLDER and (user is None or i.get("user") == user)]
+        if len(new) != 1:
+            sys.exit(uncertain)
+        readback = bwu("get", new[0]["id"], "--field", "password", "--reveal")
+        # The CLI adds one output line ending. Compare exact UTF-8 bytes in
+        # memory, without exposing either value or automatically replaying writes.
+        import hmac
+        actual = readback.stdout[:-2] if readback.stdout.endswith("\r\n") else readback.stdout[:-1] if readback.stdout.endswith("\n") else readback.stdout
+        if readback.returncode or not hmac.compare_digest(actual.encode(), value.encode()):
+            sys.exit(uncertain)
+        print("stored in Bitwarden folder '" + SECRET_FOLDER + "' and read-back verified. Put this in the note:\n  🔑 " + pointer(new[0]))
         return 0
     if a.action == "get":
         if not a.args:
@@ -1560,7 +1595,85 @@ NOISE_WORDS = {"error", "errors", "failed", "failure", "fatal", "warning", "the"
 
 # runners whose name says nothing about what failed (`git push`, `python3 x.py`); the repeat signal skips them
 GENERIC_PROGRAMS = {"bash", "sh", "zsh", "cd", "python", "python3", "node", "npm", "npx", "pnpm", "bun", "uv", "git",
-                    "make", "cat", "echo", "ls", "grep", "rg", "find", "sed", "awk", "curl", "test", "true", "false"}
+                    "make", "cat", "echo", "printf", "ls", "grep", "rg", "find", "sed", "awk", "cut", "head", "tail",
+                    "tr", "sort", "wc", "pwd", "tee", "curl", "test", "true", "false"}
+
+LOCAL_FAILURE = re.compile(
+    r"no matches found|no such file or directory|command not found|syntax error|parse error|illegal byte sequence|"
+    r"invalid (?:utf-?8|multibyte|encoding)|unicodedecodeerror|"
+    r"(?:^|\n)\s*(?:[^:\n]*?/)?(?:zsh|bash|sh|\(eval\))[:)][^\n]*\bnot found\b", re.I)
+DIAGNOSTIC = re.compile(
+    r"\b(?:error|failed|failure|fatal|refused|denied|timeout|timed out|unreachable|closed|reset|authentication|"
+    r"certificate|broken pipe|lost connection|could not|couldn't|unable)\b", re.I)
+
+
+def failure_operation(command: str) -> tuple[str, list[str]]:
+    """Conservative first-command targets; quoted payloads and file operands are not topics."""
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
+        lexer.whitespace_split = True
+        tokens = []
+        for token in lexer:
+            if token and set(token) <= set(";&|()"):
+                break
+            tokens.append(token)
+    except ValueError:
+        return "", []
+    while tokens and (re.match(r"[A-Za-z_][A-Za-z0-9_]*=", tokens[0]) or tokens[0] in ("sudo", "env", "time")):
+        tokens.pop(0)
+    if not tokens:
+        return "", []
+    program = Path(tokens[0]).name.lower()
+    topics = [program] if program not in GENERIC_PROGRAMS else []
+    options = {
+        "ssh": {"-p", "-i", "-F", "-l", "-o", "-J", "-L", "-R", "-D", "-S", "-b", "-c", "-E", "-e", "-m", "-O", "-Q", "-W", "-w", "-B"},
+        "scp": {"-P", "-i", "-F", "-o", "-J", "-S", "-c", "-l"},
+        "sftp": {"-P", "-i", "-F", "-o", "-J", "-S", "-b", "-B", "-D", "-l", "-R"},
+        "curl": {"-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--json", "-H", "--header",
+                 "-F", "--form", "--form-string", "-o", "--output", "-T", "--upload-file", "-e", "--referer",
+                 "--resolve", "--connect-to", "--proxy", "-x", "-u", "--user", "-X", "--request", "--connect-timeout", "--max-time"},
+        "wget": {"-O", "--output-document", "-o", "--output-file", "--header", "--post-data", "--post-file", "--referer"},
+        "ping": {"-c", "-i", "-W", "-t", "-s", "-I"},
+    }
+    args, index = [], 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token in options.get(program, set()):
+            index += 2
+            continue
+        if not token.startswith("-"):
+            args.append(token)
+        index += 1
+    if program in ("ssh", "sftp", "ping") and args:
+        host = args[0].rsplit("@", 1)[-1]
+        if host.startswith("[") and "]" in host:
+            host = host[1:host.index("]")]
+        elif program == "sftp" and host.count(":") == 1:
+            host = host.split(":", 1)[0]
+        topics.append(host)
+    elif program == "scp":
+        for arg in args:
+            remote = re.match(r"^(?:[^@/]+@)?(\[[^\]]+\]|[^:/\\]+):", arg)
+            if remote and not re.match(r"^[A-Za-z]:[/\\]", arg):
+                topics.append(remote[1].strip("[]"))
+    elif program in ("curl", "wget"):
+        from urllib.parse import urlsplit
+        for arg in args:
+            try:
+                parsed = urlsplit(arg)
+                if parsed.scheme in ("http", "https", "ftp", "sftp") and parsed.hostname:
+                    topics.append(parsed.hostname)
+            except ValueError:
+                continue
+    return program, topics
+
+
+def operation_mentions(root: Path, targets: list[str]) -> list[str]:
+    """Endpoints must equal an alias, rather than contain a topic inside a path or address."""
+    known = {search_text(target.rstrip(".")) for target in targets}
+    found = [group[0] for group in load_glossary(root) if known.intersection(group)]
+    found += [name for name, _ in sections(root) if search_text(name) in known and name not in found]
+    return found[:3]
 
 
 def failure_terms(cmd: str, err: str) -> list[str]:
@@ -1574,9 +1687,7 @@ def failure_terms(cmd: str, err: str) -> list[str]:
 
 
 def tool_failure_nudge(d: Path, ev: dict) -> str | None:
-    """PostToolUseFailure, MemT's harness-triggered recall. The failure names something the notes know → point at
-    it. The same command failed a third time → search the notes for the command and its error, and point at a
-    strong match. Each concept or article at most once per session."""
+    """Use diagnostic output or parsed operation targets, never arbitrary command text as a topic."""
     if ev.get("is_interrupt"):
         return None
     inp = ev.get("tool_input") or {}
@@ -1589,19 +1700,22 @@ def tool_failure_nudge(d: Path, ev: dict) -> str | None:
         return None                # working on the notes themselves: their text is in the output, not the problem
     sid = str(ev.get("session_id") or "")
     err = re.sub(r"^Exit code \d+\s*", "", str(ev.get("error") or ""))[:2000]
+    if LOCAL_FAILURE.search(err):
+        return None
+    prog, targets = failure_operation(cmd)
+    diagnostic = "\n".join(line for line in err.splitlines() if DIAGNOSTIC.search(line))
     times = failure_count(sid, cmd)
-    found = prompt_mentions(d, cmd + "\n" + err)
+    found = prompt_mentions(d, ABS_PATH.sub(" ", diagnostic)) or operation_mentions(d, targets)
     if found:
-        note_lesson(sid, found[0])     # every failure re-arms the Stop question, so it lands after the last one
+        note_lesson(sid, found[0])
         new = not_yet_nudged(sid, found)
         if new:
             return (f"memory-use: that command failed and the notes know about {', '.join(new)}. Before retrying, run "
                     f"`memory-use brief {' '.join(c.split()[0] for c in new)}` — the fix may already be written down.")
         return None
-    prog = next((Path(w).name.lower() for w in cmd.split() if "=" not in w and w not in ("sudo", "env", "time")), "")
     if times < 3 or len(prog) < 3 or prog in GENERIC_PROGRAMS:
         return None
-    terms = failure_terms(cmd, err)
+    terms = failure_terms(prog, diagnostic)
     res = [r for r in rank(d, terms, top=5) if r[1]["file"] != "glossary.md"]
     if not res:
         return None
@@ -1616,8 +1730,7 @@ def tool_failure_nudge(d: Path, ev: dict) -> str | None:
 
 
 def note_lesson(sid: str, about: str) -> None:
-    """Remember that a command failed on something the notes cover; the Stop hook asks whether the fix is written.
-    A failure after the question was asked (the agent was still stuck then) arms it again."""
+    """Record a topic once per session; later failures must not re-arm an answered reminder."""
     if not sid:
         return
     with session_update() as seen:
@@ -1626,22 +1739,21 @@ def note_lesson(sid: str, about: str) -> None:
         s = seen.setdefault(sid, {})
         s["t"] = int(time.time())
         lessons = s.setdefault("lessons", [])
-        if not any(x["about"] == about and not x.get("asked") for x in lessons):
+        if not any(x["about"] == about for x in lessons):
             lessons.append({"about": about, "t": s["t"]})
             log_lesson("failed", sid, about)
 
 
 def stop_reminder(d: Path, ev: dict) -> str | None:
-    """Stop: MemT commits a turn into memory before the plain context is dropped; compaction drops ours the same way.
-    When a command failed on something the notes cover and the notes repo has no commit since, ask once whether
-    the way past it belongs in the notes. Only Stop can still reach the model (PreCompact/SessionEnd output can't)."""
+    """Ask at most once per topic/session, including when reading older duplicate lesson records."""
     sid = str(ev.get("session_id") or "")
     if not sid or ev.get("stop_hook_active"):
         return None
     with session_update() as seen:
         if seen is None:
             return None
-        lessons = seen.get(sid, {}).get("lessons", [])
+        session = seen.get(sid, {})
+        lessons = session.get("lessons", [])
         open_ = [x for x in lessons if not x.get("saved")]
         if not open_:
             return None
@@ -1652,9 +1764,19 @@ def stop_reminder(d: Path, ev: dict) -> str | None:
             if any(c > x["t"] for c in commits):
                 x["saved"] = True
                 log_lesson("saved", sid, x["about"])
-        pending = [x for x in open_ if not x.get("saved") and not x.get("asked")]
-        for x in pending:
+        asked = set(session.get("stop_asked", [])) | {x["about"] for x in lessons if x.get("asked")}
+        pending = []
+        for x in open_:
+            if x.get("saved") or x["about"] in asked:
+                continue
+            pending.append(x)
+            asked.add(x["about"])
+        for x in open_:
+            if x["about"] not in asked:
+                continue
             x["asked"] = True
+        session["stop_asked"] = sorted(asked)
+        for x in pending:
             log_lesson("asked", sid, x["about"])
     if not pending:
         return None
