@@ -24,7 +24,7 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 TOOL_REPO = "leeguooooo/memory-use"
 INSTALL_URL = f"https://raw.githubusercontent.com/{TOOL_REPO}/main/install.sh"
 DEFAULT_NAME = "personal-memory"
@@ -1274,7 +1274,8 @@ def cmd_doctor(_a) -> int:
     auto = autosync_installed()
     stt = autosync_state()
     line(auto, "autosync: " + ("on" if auto else "off (memory_use.py autosync on)")
-         + (f"; last run {stt.get('at')} {'ok' if stt.get('ok') else 'WARN'} {stt.get('result')}" if stt else ""))
+         + (f"; last run {stt.get('at')} {'ok' if stt.get('ok') else 'WARN'} {stt.get('result')}" if stt else ""),
+         warn=not getattr(_a, "no_autosync", False))
     if stt and not stt.get("ok"):
         line(False, "last autosync did not finish: " + str(stt.get("result")))
     line(KNOWN_SECRETS.exists(), f"known-secrets list (optional, outside git): {KNOWN_SECRETS}", warn=False)

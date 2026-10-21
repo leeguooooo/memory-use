@@ -921,10 +921,9 @@ class SyncTest(unittest.TestCase):
         target = Path(self.tmp.name) / "c"
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            try:
-                mu.main(["init", "--repo", str(self.bare), "--dir", str(target), "--no-autosync"])
-            except SystemExit:
-                pass
+            rc = mu.main(["init", "--repo", str(self.bare), "--dir", str(target), "--no-autosync"])
+        self.assertEqual(rc, 0, buf.getvalue())
+        self.assertIn("--   autosync: off", buf.getvalue())
         self.assertTrue((target / ".git").exists(), buf.getvalue())
         cfg = json.loads(mu.CONFIG.read_text())
         self.assertEqual(cfg["dir"], str(target.resolve()))

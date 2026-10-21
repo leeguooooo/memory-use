@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- A successful `init --no-autosync` now returns zero when autosync is intentionally disabled. Other diagnostic failures still return nonzero.
+
 ## 0.4.0
 
 - Recall glossary links and authored troubleshooting links even when the target note uses different words. Results identify the link and its source; conditions still need verification before use.
