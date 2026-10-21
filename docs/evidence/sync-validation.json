@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-21",
+  "test_host": "Mac 190",
+  "python": "3.14.7",
+  "node": "22.22.3",
+  "after_source_sha256": "6a479d51cc975abb9272400fe7c16b2d9165793c6db87d08a6b8697b032bed11",
+  "before_source_sha256": "31b3d44f5018ede83a2ffec2f7d696b1fc96d225fd6606acdf5bf9edf3dc6838",
+  "full_tests_passed": 225,
+  "full_tests_seconds": 35.238,
+  "targeted_cases": 9,
+  "before_passed": 1,
+  "after_passed": 9,
+  "developer_dir": "/Applications/Xcode-27.0.app/Contents/Developer",
+  "sdkroot": "/Applications/Xcode-27.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk",
+  "shell_syntax": [
+    "install.sh",
+    "scripts/release.sh",
+    "template/.githooks/pre-commit"
+  ],
+  "letta_revision": "c25f091d0fce1f032e5cdf67ce131d5b474e6576",
+  "letta_source_sha256": "d219497982a9b47de810dcd4af3bcfef1a8b22db5c40a34e987e06a174c4fb35",
+  "file_sha256": {
+    "docs/evidence/before-save.patch": "1b4ce154576d7f209d1acc567a273096c30237ffca8fd5d2ba06d9b68035f8ea",
+    "docs/evidence/letta-sync.json": "f52cc19cd70e2788913ad7b04fd4212fd7d7492656d23b66672937fe0cfb48c3",
+    "docs/evidence/sync-after.json": "5666b36d3f3eff7e3a0c3db597748fda5451bd455e2d1b71d3d330fae0785097",
+    "docs/evidence/sync-before.json": "67de0bb50c965f26c7bdc80036a2552a7cd2a565066c39ec7911a7e053fcc1cf",
+    "scripts/research/letta_sync_probe.cjs": "8246ecf92600fca82959f369e17d423a7cdee8208352abb72a02dbfa9efaacbf",
+    "scripts/research/sync_probe.py": "59d51902fc8dc63779735b3dc94d7a1d5f7aa6dbd2860f7a401c0f6e2ce9a5c3",
+    "tests/test_context_budget.py": "a49560aae962bb972b2c79c26102cb43096b599710fe715c9b69b7739f018deb",
+    "tests/test_hook_state.py": "37d69bd36d6402fe8d55f939984f1201d3c67ddf9068ad81bc27641d826734c4",
+    "tests/test_memory_use.py": "ad48c8558391499d7e6208298a1f7d861a3e697f790b51ea3f6f99c82e952947",
+    "tests/test_symptom_recall.py": "26d1c874f6751e21ade71c302b8badf9debb34b4e093b7f5dd6c3c4eb7a7a9fe"
+  },
+  "baseline_reconstruction": "current -> 31b3 via before-save.patch -> 1d05 via before-symptom.patch; exact hashes checked",
+  "scope": "synthetic local bare Git integration and upstream function with injected I/O; no private notes or hosted sync",
+  "unverified": [
+    "Linux",
+    "Windows",
+    "Python 3.9",
+    "hosted Letta",
+    "cross-computer concurrent writes",
+    "power-loss durability",
+    "real model answers"
+  ]
+}

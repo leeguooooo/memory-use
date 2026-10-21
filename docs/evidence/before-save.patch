@@ -1,0 +1,92 @@
+--- a/scripts/memory_use.py
++++ b/scripts/memory_use.py
+@@ -1145,17 +1145,14 @@
+ def autosync_once(d: Path) -> tuple[bool, str]:
+     """fetch; fast-forward or rebase onto upstream; push local commits. Never commits, never stashes,
+     never touches a repo mid-rebase/merge. Uncommitted edits (maybe another session's) are left alone."""
+-    # In a linked worktree .git is a pointer file, not the operation directory.
+-    gd = Path(git("rev-parse", "--absolute-git-dir", cwd=d).stdout.strip())
++    gd = d / ".git"
+     if any((gd / x).exists() for x in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD")):
+         return False, "skipped: a rebase/merge is in progress"
++    f = git("fetch", "-q", "origin", cwd=d, check=False)
++    if f.returncode:
++        return False, "fetch failed (offline?): " + (f.stderr.strip().splitlines() or ["?"])[-1]
+     if git("rev-parse", "--abbrev-ref", "@{u}", cwd=d, check=False).returncode:
+         return False, "skipped: current branch has no upstream"
+-    branch = git("symbolic-ref", "--short", "HEAD", cwd=d).stdout.strip()
+-    remote = git("config", "--get", f"branch.{branch}.remote", cwd=d).stdout.strip()
+-    f = git("fetch", "-q", remote, cwd=d, check=False)
+-    if f.returncode:
+-        return False, "fetch failed (offline?): " + (f.stderr.strip().splitlines() or ["?"])[-1]
+     counts = git("rev-list", "--left-right", "--count", "HEAD...@{u}", cwd=d).stdout.split()
+     ahead, behind = int(counts[0]), int(counts[1])
+     dirty = bool(git("status", "--porcelain", "--untracked-files=no", cwd=d).stdout.strip())
+@@ -1758,10 +1755,21 @@
+ 
+ def cmd_sync(_a) -> int:
+     d = need_repo()
+-    ok, result = autosync_once(d)
+-    print(result)
++    dirty = git("status", "--porcelain", cwd=d).stdout.strip()
++    r = git("pull", "--rebase", "-q", *(["--autostash"] if dirty else []), cwd=d, check=False)
++    if r.returncode:
++        print(r.stderr.strip() or r.stdout.strip())
++        gd = Path(git("rev-parse", "--absolute-git-dir", cwd=d).stdout.strip())
++        if any((gd / x).exists() for x in ("rebase-merge", "rebase-apply")):
++            git("rebase", "--abort", cwd=d, check=False)
++            print("rebase conflicts: aborted, your local commits are untouched — resolve by hand")
++        return r.returncode
++    ahead = git("rev-list", "--count", "@{u}..HEAD", cwd=d, check=False).stdout.strip()
++    if ahead not in ("", "0"):
++        ok, err = safe_push(d)
++        print(f"pushed {ahead} local commit(s)" if ok else "push failed: " + err)
+     print(git("log", "--oneline", "-1", cwd=d).stdout.strip())
+-    return 0 if ok else 1
++    return 0
+ 
+ 
+ def cmd_ls(_a) -> int:
+@@ -2395,9 +2403,7 @@
+         return 1
+     if not git("diff", "--cached", "--name-only", "--", *a.paths, cwd=d).stdout.strip():
+         print("nothing to commit for those paths")
+-        # A previous attempt may have committed successfully but failed to push.
+-        # Retrying save must check that pending history, even without a new edit.
+-        return 0 if a.no_push else cmd_sync(None)
++        return 0
+     msg = a.message + (f"\n\n{a.trailer}" if a.trailer else "")
+     c = git("commit", "-q", "-m", msg, "--", *a.paths, cwd=d, check=False)   # only these paths, never others' staged work
+     if c.returncode:
+@@ -2406,11 +2412,19 @@
+     if a.no_push:
+         print("committed locally (not pushed): " + git("log", "--oneline", "-1", cwd=d).stdout.strip())
+         return 0
+-    ok, result = autosync_once(d)
++    git("fetch", "-q", cwd=d, check=False)
++    behind = git("rev-list", "--count", "HEAD..@{u}", cwd=d, check=False).stdout.strip()
++    if behind not in ("", "0"):   # only then: autostash does not restore what other sessions had staged
++        dirty = git("status", "--porcelain", cwd=d).stdout.strip()
++        pull = git("pull", "-q", "--rebase", *(["--autostash"] if dirty else []), cwd=d, check=False)
++        if pull.returncode:
++            print("committed locally, but pull --rebase failed:\n" + (pull.stderr or pull.stdout))
++            return pull.returncode
++    ok, err = safe_push(d)
+     if not ok:
+-        print("committed locally, not synced:\n" + result)
++        print("committed locally, not pushed:\n" + err)
+         return 1
+-    print(result + "\n" + git("log", "--oneline", "-1", cwd=d).stdout.strip())
++    print("pushed " + git("log", "--oneline", "-1", cwd=d).stdout.strip())
+     return 0
+ 
+ 
+@@ -2433,7 +2447,7 @@
+     sub.add_parser("path", help="print the repo path").set_defaults(fn=cmd_path)
+     sub.add_parser("clone", help="clone the configured repo if missing").set_defaults(fn=cmd_clone)
+     sub.add_parser("doctor", help="check config, repo, sync state, hook, skill install, autosync").set_defaults(fn=cmd_doctor)
+-    sub.add_parser("sync", help="pull latest and push local commits; never stash uncommitted edits").set_defaults(fn=cmd_sync)
++    sub.add_parser("sync", help="pull latest (rebase, autostash if dirty) and push local commits").set_defaults(fn=cmd_sync)
+     s = sub.add_parser("autosync", help="background pull/push on a timer (launchd / systemd / cron / Task Scheduler): on | off | status | run")
+     s.add_argument("action", choices=["on", "off", "status", "run"]); s.add_argument("--every", type=int, default=15, help="minutes")
+     s.set_defaults(fn=cmd_autosync)

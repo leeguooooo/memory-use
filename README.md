@@ -47,6 +47,16 @@ memory-use lessons             # notes that failed commands keep running into, a
 
 For a focused topic, `brief` keeps at most two chunks per note, drops weak matches, and includes only matching todos, summary lines, and commit subjects. A section name or its alias alone (`brief nas` / `brief pan`), or no topic, retains the section overview. `--max 1500` caps the context body including its truncation notice (minimum 128 characters). Repeating a term or its synonyms does not change its weight; `#` inside Markdown code fences is not a heading.
 
+A glossary entry such as `- broken exit / gateway-recovery — see vpn/route.md` recalls that article even when its text uses different words; results mark the entry with `[glossary link]`. `search`, `brief`, and `show` warn when a note's update date exceeds its review interval (default 120 days; `Review: 30d` overrides it, `Review: never` disables age warnings), or its status is deprecated. Reading a note does not refresh its date.
+
+Search and recall hooks compare Unicode compatibility forms consistently: `ＷＡＲＰ` matches `WARP`, and composed/decomposed accents match. Notes, displayed excerpts, and file paths keep their original text. This is text normalization, not semantic search.
+
+Under a tight `brief` budget, long entries become marked excerpts so later relevant sources can still fit; source paths and review warnings stay attached. Background summaries use the remaining space. Concurrent hooks serialize local state updates; unreadable state is preserved and reported by `doctor`. See the [fault experiments and limits](docs/deep-experiments.md).
+
+Existing section README Troubleshooting tables also act as explicit recall links. A supported symptom query can reach the linked article even when its body uses different wording; `[symptom link]` and `trigger:` identify this route. Entity tokens and negation markers must match. The trigger is navigation metadata; check the article's actual excerpt for the answer. See the [question-to-evidence checks](docs/recall-evaluation.md).
+
+`eval` reports search ranking and whether the expected note has an entry and excerpt in the final `brief`. Test your own questions with `memory-use eval --cases /path/outside-notes/questions.md --max 1500 --json`, using `- question words → section/article.md` lines. External questions stay outside the searchable corpus. Results distinguish missing matches, filtered notes, and budget/excerpt losses; invalid targets are reported separately. Title and glossary checks are navigation checks, not evidence that natural questions work. See [evaluation method and measured gaps](docs/recall-evaluation.md).
+
 ## Recall hook
 
 Agents forget to look things up. The Claude Code plugin ships four hooks (`hooks/hooks.json`):
@@ -76,6 +86,10 @@ Installed with `install.sh` instead of the plugin? Add the same to `~/.claude/se
 - a conflict aborts cleanly and is reported by `doctor` and `autosync status` for a human to resolve.
 
 Agents commit with `save`, which names its files explicitly, so parallel sessions never sweep up each other's work.
+
+`save` and `sync` use the same conservative sync rules as autosync. A rejected push returns nonzero and keeps the local commit; repeating `save` retries pending commits even when those files have no new changes. `--no-push` still stays local. A diverged checkout with uncommitted edits is left alone, and a conflicting rebase is aborted. See the [Letta comparison and recovery experiments](docs/letta-sync-study.md).
+
+All three commands share a lock for the checkout's Git operations, including staging and committing in `save`. A busy checkout returns nonzero after at most one second of waiting; retry later. Linked worktrees have separate locks. `--no-push` skips pushing in that command; later sync can still push the commit. See the [process concurrency experiments](docs/repository-concurrency-study.md).
 
 **Pushes go only to the bound private repo.** Before `save`, `sync` or autosync pushes anything, memory-use works out where the push would really go (`branch.pushRemote`, `remote.pushDefault`, every `pushurl`, `insteadOf` rewrites) and refuses unless each URL is the repo `init` bound this computer to. On GitHub it also asks the API that the repo is still **private** and has the same id as when it was first verified (a deleted-and-recreated or transferred repo does not count). Anything it cannot verify — `gh` logged out or on an account that can't see the repo, offline, a public repo — means no push: the commit stays local and `doctor` / `autosync status` say why. The push then names the verified remote and branch explicitly. Other hosts (GitLab, self-hosted, local paths) get the URL check only; `doctor` says visibility is not verifiable there. `save --no-push` commits without pushing.
 

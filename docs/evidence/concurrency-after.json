@@ -1,0 +1,52 @@
+{
+  "source_sha256": "618c9fbd75517e1e394e09ccaf07dcb6fa192d02dd948386bb6568735d2c5d65",
+  "scope": "separate Python processes, real local Git; push paused immediately before safe_push, synthetic notes only",
+  "cases": [
+    {
+      "case": "test_active_autosync_lock_is_not_stolen_because_of_age",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_killed_owner_releases_repository_for_next_sync",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_manual_sync_cannot_enter_another_process_transaction",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_no_push_save_cannot_join_another_process_pending_push",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_other_checkout_and_linked_worktree_can_sync_independently",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_save_does_not_stage_during_existing_merge",
+      "passed": true,
+      "failures": []
+    }
+  ],
+  "passed": 6,
+  "total": 6,
+  "save_during_pending_push": {
+    "contender_exit_code": 1,
+    "contender_stdout": "save skipped: another memory-use operation owns this checkout; retry later\n",
+    "primary": {
+      "exit_code": 0,
+      "stdout": "2026-10-21T16:47:39+09:00 ok pushed 1\n",
+      "stderr": ""
+    },
+    "later_committed_before_primary_finished": false,
+    "remote_contains_local_only_note": false,
+    "retry_exit_code": 0,
+    "retry_remains_local": true,
+    "retry_created_remote_note": false
+  }
+}

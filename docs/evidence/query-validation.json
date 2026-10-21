@@ -1,0 +1,93 @@
+{
+  "date": "2026-10-21",
+  "before_source_sha256": "1d056bf6f73eb9dace41293fffdc0f6f956f85aff01e2049da9eb507de325d99",
+  "after_source_sha256": "31b3d44f5018ede83a2ffec2f7d696b1fc96d225fd6606acdf5bf9edf3dc6838",
+  "fixture_sha256": "de467890dd63b1fbef1652e23bdc39e4b95c93f717f185f65f398235a03c96cd",
+  "tests_passed": 216,
+  "test_host": "Mac 190",
+  "python": "3.14.7",
+  "test_file_sha256": {
+    "test_symptom_recall.py": "26d1c874f6751e21ade71c302b8badf9debb34b4e093b7f5dd6c3c4eb7a7a9fe",
+    "test_hook_state.py": "37d69bd36d6402fe8d55f939984f1201d3c67ddf9068ad81bc27641d826734c4",
+    "test_context_budget.py": "a49560aae962bb972b2c79c26102cb43096b599710fe715c9b69b7739f018deb"
+  },
+  "same_navigation_case_set": true,
+  "navigation_rankings_identical": 58,
+  "navigation_inputs": 58,
+  "navigation_metrics": {
+    "before": {
+      "glossary": {
+        "cases": 15,
+        "hit_at_1_count": 15,
+        "hit_at_3_count": 15
+      },
+      "trouble": {
+        "cases": 11,
+        "hit_at_1_count": 9,
+        "hit_at_3_count": 10
+      },
+      "title": {
+        "cases": 43,
+        "hit_at_1_count": 41,
+        "hit_at_3_count": 43
+      }
+    },
+    "after": {
+      "glossary": {
+        "cases": 15,
+        "hit_at_1_count": 15,
+        "hit_at_3_count": 15
+      },
+      "trouble": {
+        "cases": 11,
+        "hit_at_1_count": 10,
+        "hit_at_3_count": 11
+      },
+      "title": {
+        "cases": 43,
+        "hit_at_1_count": 41,
+        "hit_at_3_count": 43
+      }
+    }
+  },
+  "private_scenarios": {
+    "cases": 8,
+    "source_present_by_budget": {
+      "512": {
+        "before": 6,
+        "after": 7
+      },
+      "1500": {
+        "before": 6,
+        "after": 7
+      },
+      "6000": {
+        "before": 6,
+        "after": 7
+      }
+    },
+    "ssh": {
+      "before": {
+        "rank": 11,
+        "required_evidence": false
+      },
+      "after": {
+        "rank": 1,
+        "required_evidence": true
+      }
+    },
+    "ambiguous_question_forced_route": false,
+    "scope": "hand-authored targets, not agent query generation or final answer correctness"
+  },
+  "private_markdown_files": 71,
+  "private_markdown_unchanged": true,
+  "baseline_patch_sha256": "070c82f07cc42e73aa08e27d32148d783553a54c04c1686548b83589eff1406a",
+  "unverified": [
+    "Windows runtime",
+    "Linux runtime",
+    "Python 3.9 runtime",
+    "agent query generation",
+    "final answer accuracy",
+    "general paraphrase semantics"
+  ]
+}

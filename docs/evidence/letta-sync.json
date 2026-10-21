@@ -1,0 +1,64 @@
+{
+  "revision": "c25f091d0fce1f032e5cdf67ce131d5b474e6576",
+  "source_sha256": "d219497982a9b47de810dcd4af3bcfef1a8b22db5c40a34e987e06a174c4fb35",
+  "extraction": "original function body; one backend dynamic import replaced with injected module; TypeScript signature removed",
+  "scope": "real upstream branching with synthetic Git/backend dependencies; not hosted or transport verification",
+  "cases": [
+    {
+      "name": "dirty checkout",
+      "status": "dirty",
+      "calls": []
+    },
+    {
+      "name": "existing conflict",
+      "status": "conflict",
+      "calls": []
+    },
+    {
+      "name": "no pending commit",
+      "status": "clean",
+      "calls": []
+    },
+    {
+      "name": "push rejected/offline",
+      "status": "push_failed",
+      "calls": [
+        "push"
+      ]
+    },
+    {
+      "name": "next turn retries pending commit",
+      "status": "pushed",
+      "calls": [
+        "push"
+      ]
+    },
+    {
+      "name": "non-fast-forward rebases and retries",
+      "status": "pushed",
+      "calls": [
+        "push",
+        "pull",
+        "push"
+      ]
+    },
+    {
+      "name": "post-pull conflict blocks second push",
+      "status": "conflict",
+      "calls": [
+        "push",
+        "pull"
+      ]
+    },
+    {
+      "name": "invalid history blocks push",
+      "status": "invalid",
+      "calls": []
+    },
+    {
+      "name": "unknown divergence returns clean",
+      "status": "clean",
+      "calls": []
+    }
+  ]
+}

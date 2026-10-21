@@ -1,0 +1,32 @@
+{
+  "source_sha256": "f8b92d84bdec94bc499e8e65fefc97187974b28a0866b2b97e2f058ea22bf792",
+  "cases": [
+    {
+      "budget": 128,
+      "length": 106,
+      "usable_files": [],
+      "within_cap": true
+    },
+    {
+      "budget": 512,
+      "length": 169,
+      "usable_files": [],
+      "within_cap": true
+    },
+    {
+      "budget": 1500,
+      "length": 170,
+      "usable_files": [],
+      "within_cap": true
+    },
+    {
+      "budget": 6000,
+      "length": 3213,
+      "usable_files": [
+        "nas/a.md",
+        "nas/b.md"
+      ],
+      "within_cap": true
+    }
+  ]
+}

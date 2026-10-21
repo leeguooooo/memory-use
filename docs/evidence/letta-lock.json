@@ -1,0 +1,34 @@
+{
+  "revision": "c25f091d0fce1f032e5cdf67ce131d5b474e6576",
+  "source_sha256": {
+    "file-lock.ts": "fe70a13fad842c406cd480979b47871be2636e1dd369c14f95e9f15c3b0b62fc",
+    "memory-git-dir.ts": "101e8c4e459015b3459dcf18dc378e58ff5f3136d1a28e3aaa2c3d9371c5f9bb",
+    "memory-operation.ts": "ad2ed4fe2a5db068748ca653b7e9e94a337685f1d114ef3b6bbfef6d18ba514c",
+    "sleep.ts": "4b03237aefe20e8560dbf23ee19c8008005f3064d876193c4c0f20cc8c2ed884",
+    "process-liveness.ts": "b6507ec79ebcfa297ebc7411350c9c8c87024909824d9d1d848e6f0fc08a8f5f"
+  },
+  "scope": "actual upstream modules, rewritten import paths and Node type stripping only; real local Git, files, ps and child processes; not original Bun suite or hosted Letta",
+  "node": "v22.22.3",
+  "cases": [
+    {
+      "case": "live owner with old acquisition timestamp, other timezone",
+      "passed": true
+    },
+    {
+      "case": "linked worktree independent of owned checkout",
+      "passed": true
+    },
+    {
+      "case": "explicit release permits next process",
+      "passed": true
+    },
+    {
+      "case": "terminated holder reclaimed using actual process liveness",
+      "passed": true
+    },
+    {
+      "case": "synthetic reused-pid identity record reclaimed",
+      "passed": true
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "scope": "rank function only; paired alternating order, warm local read-only corpus; no stable SLA inferred",
+  "before_module_sha256": "1d056bf6f73eb9dace41293fffdc0f6f956f85aff01e2049da9eb507de325d99",
+  "after_module_sha256": "31b3d44f5018ede83a2ffec2f7d696b1fc96d225fd6606acdf5bf9edf3dc6838",
+  "queries": {
+    "keyword": {
+      "before": {
+        "samples": 20,
+        "wall_p50_ms": 51.49,
+        "wall_p95_ms": 199.48,
+        "cpu_p50_ms": 44.84
+      },
+      "after": {
+        "samples": 20,
+        "wall_p50_ms": 55.55,
+        "wall_p95_ms": 70.73,
+        "cpu_p50_ms": 47.64
+      }
+    },
+    "symptom": {
+      "before": {
+        "samples": 20,
+        "wall_p50_ms": 48.25,
+        "wall_p95_ms": 87.98,
+        "cpu_p50_ms": 43.59
+      },
+      "after": {
+        "samples": 20,
+        "wall_p50_ms": 50.99,
+        "wall_p95_ms": 103.11,
+        "cpu_p50_ms": 45.34
+      }
+    }
+  },
+  "notes_unchanged": true
+}

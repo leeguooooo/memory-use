@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-21",
+  "memory_use": {
+    "head": "6af7c00",
+    "source_sha256": "1d056bf6f73eb9dace41293fffdc0f6f956f85aff01e2049da9eb507de325d99",
+    "tests_passed": 206,
+    "python": "3.14.7",
+    "host": "Mac 190",
+    "scripts_syntax": "passed"
+  },
+  "mcp_storage_tests": {
+    "revision": "51b6382a3e827aceb6bce430b1208d69b93d95ea",
+    "index_git_blob": "d9a135de820b09115a009b5ff82d9b655a9c67ae",
+    "node": "24.22.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12",
+    "sdk": "2.3.1",
+    "test_files": [
+      "atomic-save.test.ts",
+      "file-lock.test.ts",
+      "persistence.test.ts",
+      "knowledge-graph.test.ts"
+    ],
+    "tests_passed": 91
+  },
+  "race_probe": {
+    "processes": 2,
+    "increments_per_process": 30,
+    "expected": 60,
+    "pre_turn_snapshot_observed": 30,
+    "public_baseline_6af7c00_observed": 10,
+    "after_observed": 60,
+    "read_delay_ms": 3,
+    "scope": "schedule perturbation; not production loss rate"
+  },
+  "local_readonly_check": {
+    "rankings_identical": 77,
+    "inputs": 77,
+    "scenario_count": 8,
+    "source_present_by_budget": {
+      "512": {
+        "before": 5,
+        "after": 6
+      },
+      "1500": {
+        "before": 6,
+        "after": 6
+      },
+      "6000": {
+        "before": 6,
+        "after": 6
+      }
+    },
+    "markdown_unchanged": true,
+    "scope": "human-authored cases, not blind agent answers"
+  },
+  "unverified": [
+    "Windows lock runtime",
+    "Linux runtime",
+    "Python 3.9 runtime",
+    "hard power-loss durability",
+    "end-to-end competitor QA",
+    "agent blind evaluation"
+  ]
+}

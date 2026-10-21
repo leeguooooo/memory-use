@@ -80,6 +80,112 @@ class MemoryUseTest(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         self.assertIn("nas/office.md", out)
 
+    def test_search_normalizes_fullwidth_queries_and_repeated_aliases(self):
+        def ranking(terms):
+            return [(s, c["file"], c["line"]) for s, c, _ in mu.rank(self.root, terms)]
+        self.assertEqual(ranking(["１９０"]), ranking(["190"]))
+        self.assertEqual(ranking(["ＮＡＳ"]), ranking(["nas"]))
+        self.assertEqual(ranking(["nas", "ＮＡＳ", "群晖"]), ranking(["nas"]))
+        (self.root / "nas/unrelated.md").write_text("# Timeline\nSince 1900\n")
+        self.assertNotIn("nas/unrelated.md", [c["file"] for _, c, _ in mu.rank(self.root, ["１９０"])])
+
+    def test_normalized_search_keeps_original_source_and_real_paths(self):
+        note = self.root / "nas/ＶＰＮ.md"
+        original = "# ＶＰＮ\n\n**Key points**\n- ＶＰＮ 接入使用 cafe\u0301 网络\n"
+        note.write_text(original)
+        for command in ("search", "brief"):
+            rc, out = self.run_cmd(command, "VPN", "café")
+            self.assertEqual(rc, 0, out)
+            self.assertIn("nas/ＶＰＮ.md", out)
+            self.assertIn("ＶＰＮ 接入使用 cafe\u0301 网络", out)
+        self.assertEqual(note.read_text(), original)
+
+    def test_fullwidth_glossary_alias_resolves_pointer_and_hook(self):
+        self._glossary("- Ｈｏｐｐｅｒ / Ｔｒｉａｌ Ｔｏｏｌ — see nas/tool.md\n")
+        (self.root / "nas/tool.md").write_text("# Debugging guide\n\nUse the saved procedure\n")
+        for terms in (("Hopper",), ("Ｔｒｉａｌ", "Ｔｏｏｌ")):
+            results = mu.rank(self.root, list(terms))
+            self.assertEqual(results[0][1]["file"], "nas/tool.md")
+            self.assertTrue(results[0][1]["via_glossary"])
+        self.assertEqual(mu.prompt_mentions(self.root, "打开 Ｈｏｐｐｅｒ"), ["hopper"])
+
+    def test_glossary_pointer_recalls_article_without_query_words(self):
+        self._glossary("- gateway-recovery / broken exit — see nas/route.md\n")
+        (self.root / "nas/route.md").write_text(
+            "# Route repair\n\n**Key points**\n- Restore the previous route\n\n## Commands\nUse the saved configuration\n")
+        results = mu.rank(self.root, ["gateway-recovery"])
+        self.assertEqual(results[0][1]["file"], "nas/route.md")
+        self.assertEqual(sum(c["file"] == "nas/route.md" for _, c, _ in results), 1)
+        for query in (("gateway-recovery",), ("broken", "exit")):
+            for command in ("search", "brief"):
+                rc, out = self.run_cmd(command, *query)
+                self.assertEqual(rc, 0, out)
+                self.assertIn("nas/route.md", out)
+                self.assertIn("[glossary link]", out)
+                self.assertIn("Restore the previous route", out)
+        self.assertIn("nas/route.md", mu.rank(self.root, ["gateway-recovery", "gateway-recovery"])[0][1]["file"])
+
+    def test_glossary_pointer_does_not_match_unrelated_or_archived_content(self):
+        archive = self.root / "archive/nas"
+        archive.mkdir(parents=True)
+        (archive / "route.md").write_text("# Retired configuration\n\nDo not use\n")
+        self._glossary("- historical-trigger — 见 archive/nas/route.md\n"
+                       "- missing-trigger — see nas/missing.md\n"
+                       "- directory-trigger — see nas/folder.md\n")
+        (self.root / "nas/folder.md").mkdir()
+        self.assertNotIn("directory-trigger", mu.glossary_pointers(self.root))
+        self.assertNotIn("missing-trigger", mu.glossary_pointers(self.root))
+        for term in ("unrelated-trigger", "historical-trigger"):
+            self.assertFalse([c for _, c, _ in mu.rank(self.root, [term]) if c["file"] != "glossary.md"])
+        results = mu.rank(self.root, ["historical-trigger"], include_archive=True)
+        self.assertEqual(results[0][1]["file"], "archive/nas/route.md")
+
+    def test_glossary_pointer_normalizes_internal_paths_and_rejects_escape(self):
+        external = Path(self.tmp.name) / "outside.md"
+        external.write_text("# External note\n")
+        (self.root / "nas/linked.md").symlink_to(external)
+        self._glossary("- normalized-trigger — see ./nas/lucky.md\n"
+                       "- escaping-trigger — see ../outside.md\n"
+                       "- symlink-trigger — see nas/linked.md\n")
+        pointers = mu.glossary_pointers(self.root)
+        self.assertEqual(pointers["normalized-trigger"], ["nas/lucky.md"])
+        self.assertNotIn("escaping-trigger", pointers)
+        self.assertNotIn("symlink-trigger", pointers)
+
+    def test_recall_warns_on_overdue_metadata_even_for_nested_chunk(self):
+        old = (mu.dt.date.today() - mu.dt.timedelta(days=31)).isoformat()
+        (self.root / "nas/lucky.md").write_text(
+            f"# Routing\n\n> Updated: {old} · Status: active · Review: 30d\n\n"
+            "## Tunnel repair\nRestart the tunnel process\n")
+        for command, args in (("brief", ("tunnel",)), ("search", ("tunnel",)), ("show", ("nas/lucky",))):
+            rc, out = self.run_cmd(command, *args)
+            self.assertEqual(rc, 0, out)
+            self.assertIn("WARN last updated 31 days ago (review every 30)", out)
+            self.assertIn("tunnel", out)
+        # Recall never edits notes, or treats access as refreshing the update date.
+        self.assertIn(old, (self.root / "nas/lucky.md").read_text())
+
+    def test_recall_review_intervals_and_deprecated_notes(self):
+        old = (mu.dt.date.today() - mu.dt.timedelta(days=121)).isoformat()
+        for extra, warned in (("", True), (" · Review: never", False), (" · 复核：长期", False)):
+            (self.root / "nas/lucky.md").write_text(ARTICLE_OK.replace("2026-09-15", old).replace("状态：在用", "状态：在用" + extra))
+            _, out = self.run_cmd("brief", "lucky")
+            self.assertEqual("WARN last updated" in out, warned, out)
+        (self.root / "nas/lucky.md").write_text(ARTICLE_OK.replace("状态：在用", "Status: deprecated · Review: never"))
+        _, out = self.run_cmd("brief", "lucky")
+        self.assertIn("WARN marked deprecated", out)
+        self.assertIn("nas/lucky.md", out)  # keep the historical evidence accessible
+        (self.root / "nas/lucky.md").write_text(ARTICLE_OK.replace("Lucky 在 443", "Lucky replaces a deprecated service"))
+        _, out = self.run_cmd("brief", "lucky")
+        self.assertNotIn("marked deprecated", out)  # prose is not the article's status
+
+    def test_invalid_update_date_reports_warning_instead_of_crashing(self):
+        (self.root / "nas/lucky.md").write_text(ARTICLE_OK.replace("2026-09-15", "2026-02-30"))
+        for command, args in (("lint", ("--strict",)), ("brief", ("lucky",))):
+            rc, out = self.run_cmd(command, *args)
+            self.assertEqual(rc, 1 if command == "lint" else 0, out)
+            self.assertIn("invalid update date 2026-02-30", out)
+
     def test_brief_packs_section_summary_todos_and_history(self):
         rc, out = self.run_cmd("brief", "nas")
         self.assertEqual(rc, 0)
@@ -264,6 +370,83 @@ class MemoryUseTest(unittest.TestCase):
         for p in (self.root / "nas").glob("*.md"):
             p.unlink()
         self.assertEqual(self.run_cmd("eval")[0], 1)
+
+    def test_eval_external_questions_measure_final_brief_and_do_not_leak(self):
+        questions = Path(self.tmp.name) / "questions.md"
+        questions.write_text("# Questions\n- lucky 443 → nas/lucky.md\n- unrecorded-problem → nas/office.md\n")
+        before = {p: p.read_bytes() for p in self.root.rglob("*.md")}
+        rc, out = self.run_cmd("eval", "--cases", str(questions), "--json")
+        self.assertEqual(rc, 0, out)
+        report = json.loads(out)
+        self.assertEqual(list(report["summary"]), ["manual", "all"])
+        self.assertEqual(report["summary"]["manual"]["hit_at_1"], 0.5)
+        self.assertEqual(report["summary"]["manual"]["brief_present"], 0.5)
+        self.assertEqual([c["brief_status"] for c in report["cases"]], ["present", "not-retrieved"])
+        for c in report["cases"]:
+            rendered = mu.render_brief(self.root, c["query"].split(), report["max_chars"])
+            self.assertEqual(c["brief_status"] == "present", c["expected"] in mu.brief_files(rendered or ""))
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob("*.md")})
+
+    def test_eval_distinguishes_budget_loss_from_retrieval(self):
+        cases = [("manual", "lucky", "nas/lucky.md", "")]
+        report = mu.evaluate_recall(self.root, cases, max_chars=128)
+        self.assertEqual(report["cases"][0]["rank"], 1)
+        self.assertEqual(report["cases"][0]["brief_status"], "budget-or-no-excerpt")
+        self.assertEqual(report["summary"]["all"]["brief_present"], 0)
+        self.assertEqual(report["summary"]["all"]["hit_at_1"], 1)
+
+    def test_eval_counts_distinct_files_beyond_twenty_chunks(self):
+        crowded = "# dominant\n" + "\n".join(f"## routekey {i}\nroutekey routekey\n" for i in range(25))
+        (self.root / "nas/a.md").write_text(crowded)
+        (self.root / "nas/b.md").write_text("# Recovery\nroutekey\n")
+        report = mu.evaluate_recall(self.root, [("manual", "routekey", "nas/b.md", "")])
+        case = report["cases"][0]
+        self.assertEqual(case["rank"], 2)
+        self.assertNotEqual(case["brief_status"], "not-retrieved")
+
+    def test_eval_distinguishes_selection_loss_from_missing_match(self):
+        for i in range(6):
+            (self.root / f"nas/lead-{i}.md").write_text("# Important\nrouteword\n")
+        (self.root / "nas/recovery.md").write_text("# Recovery\nrouteword\n")
+        report = mu.evaluate_recall(self.root, [("manual", "routeword important", "nas/recovery.md", "")])
+        self.assertEqual(report["cases"][0]["rank"], 7)
+        self.assertEqual(report["cases"][0]["brief_status"], "filtered")
+
+    def test_eval_keeps_original_question_and_keyword_retry_separate(self):
+        (self.root / "nas/network.md").write_text("# 新电脑接入\n\n**Key points**\n- 新电脑先配置私人 VPN\n")
+        report = mu.evaluate_recall(self.root, [
+            ("original", "换电脑了怎么接回家里的网络", "nas/network.md", ""),
+            ("retry", "新电脑 私人 VPN", "nas/network.md", "")])
+        self.assertEqual(report["summary"]["original"]["brief_present"], 0)
+        self.assertEqual(report["summary"]["retry"]["brief_present"], 1)
+
+    def test_eval_rejects_searchable_question_files_and_invalid_targets(self):
+        questions = self.root / "questions.md"
+        questions.write_text("- lucky → nas/lucky.md\n")
+        rc, _ = self.run_cmd("eval", "--cases", str(questions))
+        self.assertNotEqual(rc, 0)
+        questions = Path(self.tmp.name) / "questions.md"
+        questions.write_text("- lucky → nas/missing.md\n- lucky → ../outside.md\n")
+        rc, out = self.run_cmd("eval", "--cases", str(questions), "--json")
+        self.assertEqual(rc, 1)
+        report = json.loads(out)
+        self.assertEqual(report["summary"]["all"]["invalid"], 2)
+        self.assertEqual({c["brief_status"] for c in report["cases"]}, {"invalid-target"})
+        questions.write_text("- lucky → nas/lucky.md\n- lucky → nas/missing.md\n")
+        rc, out = self.run_cmd("eval", "--cases", str(questions), "--json")
+        summary = json.loads(out)["summary"]["all"]
+        self.assertEqual((rc, summary["valid_cases"], summary["hit_at_1"]), (1, 1, 1))
+        questions.write_text("# no cases\n")
+        rc, out = self.run_cmd("eval", "--cases", str(questions), "--json")
+        self.assertEqual(rc, 1)
+        self.assertIn("error", json.loads(out))
+
+    def test_brief_presence_requires_complete_header_and_source_excerpt(self):
+        header = "- nas/lucky.md:1 ‹Lucky›"
+        self.assertEqual(mu.brief_files(header), set())
+        self.assertEqual(mu.brief_files(header + "\n    WARN marked deprecated\n    要点/key points:"), set())
+        self.assertEqual(mu.brief_files(header + "\n    4: Restore route"), {"nas/lucky.md"})
+        self.assertEqual(mu.brief_files("- nas/lucky.md:1 ‹Luck\n…(truncated)"), set())
 
     def test_prompt_hook_once_per_session_and_ignores_paths(self):
         self.addCleanup(setattr, mu, "STATE_DIR", mu.STATE_DIR)
@@ -880,6 +1063,143 @@ class SyncTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             rc = mu.main(["migrate", "--push"])
         self.assertEqual(rc, 0)
+
+    def reject_pushes(self):
+        hook = self.bare / "hooks" / "pre-receive"
+        hook.write_text("#!/bin/sh\necho 'synthetic push rejected' >&2\nexit 1\n")
+        hook.chmod(0o755)
+        return hook
+
+    def save_note(self, *extra):
+        os.environ["MEMORY_USE_DIR"] = str(self.b)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            rc = mu.main(["save", "note.md", "-m", "note", *extra])
+        return rc, output.getvalue()
+
+    def test_sync_push_rejection_is_failure_and_can_retry(self):
+        self.commit(self.b, "note.md", "local fact\n")
+        local = self.head(self.b)
+        remote = self.remote_head(self.bare)
+        hook = self.reject_pushes()
+        rc, out = self.run_sync(self.b)
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn("push failed", out)
+        self.assertEqual(self.head(self.b), local)
+        self.assertEqual(self.remote_head(self.bare), remote)
+        hook.unlink()
+        rc, out = self.run_sync(self.b)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.remote_head(self.bare), local)
+
+    def test_save_retry_pushes_existing_commit_without_duplicate(self):
+        (self.b / "note.md").write_text("local fact\n")
+        remote = self.remote_head(self.bare)
+        hook = self.reject_pushes()
+        rc, out = self.save_note()
+        self.assertNotEqual(rc, 0, out)
+        local = self.head(self.b)
+        self.assertNotEqual(local, remote)
+        self.assertEqual(self.remote_head(self.bare), remote)
+        hook.unlink()
+        rc, out = self.save_note()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.head(self.b), local)
+        self.assertEqual(self.remote_head(self.bare), local)
+
+    def test_save_retry_still_rejects_unavailable_remote(self):
+        (self.b / "note.md").write_text("local fact\n")
+        self.reject_pushes()
+        self.assertNotEqual(self.save_note()[0], 0)
+        local = self.head(self.b)
+        rc, out = self.save_note()
+        self.assertNotEqual(rc, 0, out)
+        self.assertEqual(self.head(self.b), local)
+        self.assertNotEqual(self.remote_head(self.bare), local)
+
+    def test_save_no_push_retry_does_not_sync_existing_commit(self):
+        (self.b / "note.md").write_text("local fact\n")
+        remote = self.remote_head(self.bare)
+        self.assertEqual(self.save_note("--no-push")[0], 0)
+        local = self.head(self.b)
+        self.assertEqual(self.save_note("--no-push")[0], 0)
+        self.assertEqual(self.head(self.b), local)
+        self.assertEqual(self.remote_head(self.bare), remote)
+
+    def test_save_diverged_dirty_checkout_preserves_other_sessions_index(self):
+        self.commit(self.a, "README.md", "remote revision\n")
+        sh("git", "push", "-q", cwd=self.a)
+        (self.b / "README.md").write_text("other session staged\n")
+        sh("git", "add", "README.md", cwd=self.b)
+        (self.b / "README.md").write_text("other session unstaged\n")
+        (self.b / "note.md").write_text("local fact\n")
+        index_before = mu.git("show", ":README.md", cwd=self.b).stdout
+        remote = self.remote_head(self.bare)
+        rc, out = self.save_note()
+        self.assertNotEqual(rc, 0, out)
+        self.assertEqual((self.b / "README.md").read_text(), "other session unstaged\n")
+        self.assertEqual(mu.git("show", ":README.md", cwd=self.b).stdout, index_before)
+        self.assertEqual(self.remote_head(self.bare), remote)
+        self.assertEqual(mu.git("show", "HEAD:note.md", cwd=self.b).stdout, "local fact\n")
+        self.assertEqual(mu.git("stash", "list", cwd=self.b).stdout, "")
+
+    def test_sync_diverged_dirty_checkout_is_left_alone(self):
+        self.commit(self.a, "README.md", "remote revision\n")
+        sh("git", "push", "-q", cwd=self.a)
+        self.commit(self.b, "note.md", "local fact\n")
+        (self.b / "README.md").write_text("other session edit\n")
+        local = self.head(self.b)
+        rc, out = self.run_sync(self.b)
+        self.assertNotEqual(rc, 0, out)
+        self.assertEqual(self.head(self.b), local)
+        self.assertEqual((self.b / "README.md").read_text(), "other session edit\n")
+        self.assertEqual(mu.git("stash", "list", cwd=self.b).stdout, "")
+
+    def test_save_rebase_conflict_aborts_and_retains_local_commit(self):
+        self.commit(self.a, "note.md", "remote fact\n")
+        sh("git", "push", "-q", cwd=self.a)
+        (self.b / "note.md").write_text("local fact\n")
+        rc, out = self.save_note()
+        self.assertNotEqual(rc, 0, out)
+        self.assertEqual((self.b / "note.md").read_text(), "local fact\n")
+        self.assertFalse((self.b / ".git" / "rebase-merge").exists())
+        self.assertEqual(mu.git("show", "HEAD:note.md", cwd=self.b).stdout, "local fact\n")
+
+    def test_sync_skips_active_merge_in_linked_worktree(self):
+        linked = Path(self.tmp.name) / "linked"
+        sh("git", "worktree", "add", "-qb", "linked", str(linked), cwd=self.b)
+        sh("git", "branch", "--set-upstream-to=origin/main", "linked", cwd=self.b)
+        self.commit(linked, "README.md", "linked revision\n")
+        self.commit(self.b, "README.md", "other revision\n")
+        merge = mu.git("merge", "main", cwd=linked, check=False)
+        self.assertNotEqual(merge.returncode, 0)
+        content = (linked / "README.md").read_text()
+        local, remote = self.head(linked), self.remote_head(self.bare)
+        ok, result = mu.autosync_once(linked)
+        self.assertFalse(ok, result)
+        self.assertIn("in progress", result)
+        rc, out = self.run_sync(linked)
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn("in progress", out)
+        self.assertEqual((linked / "README.md").read_text(), content)
+        self.assertEqual(self.head(linked), local)
+        self.assertEqual(self.remote_head(self.bare), remote)
+
+    def test_autosync_and_sync_use_configured_upstream_remote(self):
+        sh("git", "remote", "rename", "origin", "notes", cwd=self.b)
+        self.commit(self.a, "remote.md", "remote fact\n")
+        sh("git", "push", "-q", cwd=self.a)
+        self.commit(self.b, "local.md", "local fact\n")
+        ok, result = mu.autosync_once(self.b)
+        self.assertTrue(ok, result)
+        self.assertEqual(self.remote_head(self.bare), self.head(self.b))
+        self.commit(self.a, "later.md", "later fact\n")
+        # a is now behind b too; push by rebasing its local commit first.
+        sh("git", "pull", "--rebase", "-q", cwd=self.a)
+        sh("git", "push", "-q", cwd=self.a)
+        rc, out = self.run_sync(self.b)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual((self.b / "later.md").read_text(), "later fact\n")
 
 
 class ProfileLeakHookTest(unittest.TestCase):

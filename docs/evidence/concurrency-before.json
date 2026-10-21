@@ -1,0 +1,60 @@
+{
+  "source_sha256": "6a479d51cc975abb9272400fe7c16b2d9165793c6db87d08a6b8697b032bed11",
+  "scope": "separate Python processes, real local Git; push paused immediately before safe_push, synthetic notes only",
+  "cases": [
+    {
+      "case": "test_active_autosync_lock_is_not_stolen_because_of_age",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-concurrency-nQ2cykqv/tests/test_repository_concurrency.py\", line 127, in test_active_autosync_lock_is_not_stolen_because_of_age\n    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 == 0 : 2026-10-21T16:43:02+09:00 ok pushed 1\n\n"
+      ]
+    },
+    {
+      "case": "test_killed_owner_releases_repository_for_next_sync",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_manual_sync_cannot_enter_another_process_transaction",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-concurrency-nQ2cykqv/tests/test_repository_concurrency.py\", line 112, in test_manual_sync_cannot_enter_another_process_transaction\n    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 == 0 : pushed 1\n18c9fcd first.md\n\n"
+      ]
+    },
+    {
+      "case": "test_no_push_save_cannot_join_another_process_pending_push",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-concurrency-nQ2cykqv/tests/test_repository_concurrency.py\", line 100, in test_no_push_save_cannot_join_another_process_pending_push\n    self.assertNotEqual(result[\"contender_exit_code\"], 0, result)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 0 == 0 : {'contender_exit_code': 0, 'contender_stdout': 'committed locally (not pushed): 5b5677c later\\n', 'primary': {'exit_code': 0, 'stdout': '2026-10-21T16:43:03+09:00 ok pushed 1\\n', 'stderr': ''}, 'later_committed_before_primary_finished': True, 'remote_contains_local_only_note': True, 'retry_exit_code': 0, 'retry_remains_local': False, 'retry_created_remote_note': True}\n"
+      ]
+    },
+    {
+      "case": "test_other_checkout_and_linked_worktree_can_sync_independently",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_save_does_not_stage_during_existing_merge",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-concurrency-nQ2cykqv/tests/test_repository_concurrency.py\", line 159, in test_save_does_not_stage_during_existing_merge\n    self.assertEqual(base.mu.git(\"ls-files\", \"--stage\", cwd=self.case.b).stdout, before)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '1006[177 chars].md\\n100644 6eab23ce31da3c257f4eaea5513ef99a37[16 chars]md\\n' != '1006[177 chars].md\\n'\n  100644 7c88e8a591766f27635a5bdab01832a59b04cf2e 1\tREADME.md\n  100644 cbc3eb0a4e52b497a7c4e172314928f86a56e017 2\tREADME.md\n  100644 54453cfc2b60398ed73309519aea60743fe2ca1d 3\tREADME.md\n- 100644 6eab23ce31da3c257f4eaea5513ef99a373e3ba8 0\tlater.md\n\n"
+      ]
+    }
+  ],
+  "passed": 2,
+  "total": 6,
+  "save_during_pending_push": {
+    "contender_exit_code": 0,
+    "contender_stdout": "committed locally (not pushed): b8d0d88 later\n",
+    "primary": {
+      "exit_code": 0,
+      "stdout": "2026-10-21T16:43:05+09:00 ok pushed 1\n",
+      "stderr": ""
+    },
+    "later_committed_before_primary_finished": true,
+    "remote_contains_local_only_note": true,
+    "retry_exit_code": 0,
+    "retry_remains_local": false,
+    "retry_created_remote_note": true
+  }
+}

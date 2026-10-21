@@ -9,7 +9,9 @@ refuses to commit anything that looks like a secret.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager, ExitStack
 import datetime as dt
+import errno
 import json
 import math
 import os
@@ -17,7 +19,9 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+import unicodedata
 from pathlib import Path
 
 VERSION = "0.3.2"
@@ -83,7 +87,8 @@ def need_repo() -> Path:
 
 def md_files(root: Path, include_archive: bool = False) -> list[Path]:
     skip = SKIP_DIRS - ({"archive"} if include_archive else set())
-    return sorted(p for p in root.rglob("*.md") if not (set(p.relative_to(root).parts) & skip))
+    return sorted(p for p in root.rglob("*.md")
+                  if p.is_file() and not (set(p.relative_to(root).parts) & skip))
 
 
 def sections(root: Path) -> list[tuple[str, str]]:
@@ -105,6 +110,11 @@ def sections(root: Path) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------- glossary + ranked search
 
 
+def search_text(text: str) -> str:
+    """Compare compatibility-equivalent text without rewriting notes or paths."""
+    return unicodedata.normalize("NFKC", text).lower()
+
+
 def load_glossary(root: Path) -> list[list[str]]:
     """Each concept is a list of lowercase aliases, from `- a / b / c — description` lines."""
     f = root / "glossary.md"
@@ -115,7 +125,7 @@ def load_glossary(root: Path) -> list[list[str]]:
         if not line.startswith("- "):
             continue
         names = re.split(r"\s+—\s+", line[2:], maxsplit=1)[0]
-        aliases = [a.strip().strip("`").lower() for a in names.split(" / ") if a.strip()]
+        aliases = [search_text(a.strip().strip("`")) for a in names.split(" / ") if a.strip()]
         if aliases:
             groups.append(aliases)
     return groups
@@ -128,6 +138,7 @@ class Alias:
     __slots__ = ("text", "rx")
 
     def __init__(self, text: str, typed: bool = False):
+        text = search_text(text)
         self.text = text
         exact = text.isascii() and (not typed or any(ch.isdigit() for ch in text))
         self.rx = re.compile(rf"(?<![a-z0-9_.]){re.escape(text)}(?![a-z0-9_]|\.[a-z0-9])") if exact else None
@@ -148,7 +159,7 @@ def join_phrases(terms: list[str], glossary: list[list[str]]) -> list[str]:
     out, i = [], 0
     while i < len(terms):
         for n in (3, 2):
-            phrase = " ".join(terms[i:i + n]).lower()
+            phrase = search_text(" ".join(terms[i:i + n]))
             if i + n <= len(terms) and phrase in known:
                 out.append(phrase)
                 i += n
@@ -163,7 +174,7 @@ def expand(terms: list[str], glossary: list[list[str]]) -> list[set[Alias]]:
     """One alternative-set per query term: the term plus every alias of a glossary concept containing it."""
     out = []
     for t in join_phrases(terms, glossary):
-        t = t.lower()
+        t = search_text(t)
         concepts = [g for g in glossary if t in g]
         alts = {Alias(a) for g in concepts for a in g} if concepts else {Alias(t, typed=True)}
         # Repeating a term or two names of the same concept must not change its weight.
@@ -173,7 +184,7 @@ def expand(terms: list[str], glossary: list[list[str]]) -> list[set[Alias]]:
 
 
 def hits(text: str, alts: set[Alias]) -> int:
-    low = text.lower()
+    low = search_text(text)
     return sum(a.count(low) for a in alts)
 
 
@@ -223,20 +234,120 @@ def glossary_pointers(root: Path) -> dict[str, list[str]]:
         if not line.startswith("- "):
             continue
         names, _, desc = line[2:].partition(" — ")
-        files = [m for m in SEE_ARTICLE.findall(desc) if (root / m).exists()]
+        files = []
+        for target in SEE_ARTICLE.findall(desc):
+            path = (root / target).resolve()
+            if path.is_file() and root.resolve() in path.parents:
+                files.append(str(path.relative_to(root.resolve())))
         for alias in names.split(" / "):
             if files and alias.strip():
-                out.setdefault(alias.strip().strip("`").lower(), []).extend(files)
+                out.setdefault(search_text(alias.strip().strip("`")), []).extend(files)
     return out
 
 
-def rank(root: Path, terms: list[str], include_archive: bool = False, top: int = 8) -> list[tuple[float, dict, list[tuple[int, str]]]]:
+def trouble_routes(root: Path) -> list[dict]:
+    """Authored symptom -> article links, not eval questions or inferred facts."""
+    routes = []
+    resolved = root.resolve()
+    for readme in sorted(root.glob("*/README.md")):
+        if readme.parent.name in SKIP_DIRS or readme.parent.name.startswith(".") or resolved not in readme.resolve().parents:
+            continue
+        active, fence = False, None
+        for number, line in enumerate(readme.read_text(errors="ignore").splitlines(), 1):
+            marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+            if marker:
+                token, tail = marker.groups()
+                if fence is None:
+                    fence = (token[0], len(token))
+                elif token[0] == fence[0] and len(token) >= fence[1] and not tail.strip():
+                    fence = None
+                continue
+            if fence is not None:
+                continue
+            if re.match(r"^#{1,2}\s", line):
+                active = bool(re.match(r"^##\s+(?:出问题先看这里|Troubleshooting|If something breaks)\s*$", line, re.I))
+            if not active or not line.startswith("|"):
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) < 2 or set(cells[0]) <= set("-: ") or cells[0].lower() in ("现象", "symptom"):
+                continue
+            for linked, plain in re.findall(r"\]\(([^)#\s]+\.md)|(?<![\w/\\:.(])([\w.-]+\.md)\b", cells[1]):
+                target = (readme.parent / (linked or plain)).resolve()
+                if not target.is_file() or resolved not in target.parents:
+                    continue
+                relative = target.relative_to(resolved)
+                if target.name == "README.md" or str(relative) == "evals.md" or set(relative.parts) & SKIP_DIRS:
+                    continue
+                routes.append({"condition": cells[0].replace("`", ""), "target": str(relative),
+                               "source": str(readme.relative_to(root)), "line": number})
+                break
+    return routes
+
+
+NEGATION = re.compile(r"[不没未无勿]|\b(?:not|never|cannot|without|no)\b", re.I)
+
+
+def symptom_matches(terms: list[str], condition: str, glossary: list[list[str]]) -> bool:
+    """Conservative literal routing: all entities and ordered CJK characters must be supported."""
+    query = search_text(" ".join(terms)).strip(" ?？!！。")
+    query = re.sub(r"^(?:请问|为什么|如何|怎么)\s*", "", query)
+    query = re.sub(r"(?:怎么办|怎么处理|怎么解决|怎么排查)$", "", query).strip()
+    condition = search_text(condition)
+    if NEGATION.findall(query) != NEGATION.findall(condition):
+        return False
+    if query == condition:
+        return True
+    if len(re.findall(r"[\u3400-\u9fff]", query)) < 4:
+        return False
+    for group in expand(query.split(), glossary):
+        if any(Alias(alias.text).count(condition) for alias in group):
+            continue
+        # A named concept that does not occur under any alias is a different
+        # entity; never weaken it into character fragments.
+        if len(group) != 1:
+            return False
+        text = next(iter(group)).text
+        if text.isascii() or re.search(r"[a-z][a-z0-9+.-]*://|[/\\]|[a-z0-9][a-z0-9_-]*\.[a-z0-9]", text):
+            return False  # do not rebuild an unmatched identifier or URL from fragments
+        words = re.findall(r"[a-z0-9][a-z0-9_.-]*", text)
+        if not all(Alias(word).count(condition) for word in words):
+            return False
+        runs = re.findall(r"[\u3400-\u9fff]+", text)
+        if any(run[:2] not in condition for run in runs):
+            return False  # retain a contiguous anchor rather than matching dispersed letters
+        chars = "".join(runs)
+        if not chars:
+            return False
+        available = iter("".join(re.findall(r"[\u3400-\u9fff]", condition)))
+        if not all(any(want == actual for actual in available) for want in chars):
+            return False
+    # Recognize registered names even inside an unspaced Chinese question.
+    # A one-alias concept is still an entity, not a sequence of loose characters.
+    for concept in glossary:
+        if any(Alias(alias).count(query) for alias in concept) and not any(Alias(alias).count(condition) for alias in concept):
+            return False
+    return True
+
+
+def rank(root: Path, terms: list[str], include_archive: bool = False, top: int | None = 8) -> list[tuple[float, dict, list[tuple[int, str]]]]:
     glossary = load_glossary(root)
     groups = expand(terms, glossary)
     if not groups:
         return []
-    pointed = {f for g in groups for a in g for f in glossary_pointers(root).get(a.text, ())}
+    pointers = glossary_pointers(root)
+    pointed_groups = [{f for a in g for f in pointers.get(a.text, ())} for g in groups]
+    pointed = set().union(*pointed_groups)
+    symptoms = {}
+    for route in trouble_routes(root):
+        if symptom_matches(terms, route["condition"], glossary):
+            symptoms.setdefault(route["target"], route)
     cs = chunks(root, include_archive)
+    # A pointer names an article, not every section in it. Give its opening chunk
+    # the trigger even when the author used different words in the article itself.
+    openings = {}
+    for c in cs:
+        if c["heading"] or c["text"].strip():
+            openings.setdefault(c["file"], c["line"])
     n = len(cs) or 1
     counts = [[(hits(c["heading"], g), hits(c["text"], g),
                 hits(re.sub(r"\.md$", "", c["file"]), g)) for g in groups] for c in cs]
@@ -245,9 +356,14 @@ def rank(root: Path, terms: list[str], include_archive: bool = False, top: int =
     for c, row in zip(cs, counts):
         per = []
         named = False
-        for (hh, bh, fh), d in zip(row, df):
+        linked = False
+        routed = c["file"] in symptoms and c["line"] == openings.get(c["file"])
+        for (hh, bh, fh), d, targets in zip(row, df, pointed_groups):
             named |= bool(fh)
             h = 3 * hh + 3 * fh + bh
+            if (c["file"] in targets and c["line"] == openings.get(c["file"])) or routed:
+                h = max(h, 3)
+                linked |= c["file"] in targets
             per.append(h * math.log(1 + n / (1 + d)) if h else 0.0)
         if not any(per):
             continue
@@ -259,10 +375,17 @@ def rank(root: Path, terms: list[str], include_archive: bool = False, top: int =
             score *= 2            # a whole article named after the topic beats a section that mentions it
         if c["file"] in pointed:
             score *= 2            # the glossary says "见 this article" for the concept asked about
+        if routed:
+            score *= 2            # an authored troubleshooting row explicitly names this article
         if c["file"] == "glossary.md":
             score *= 0.2          # the glossary names everything; it should not crowd out the notes
         c["matched"] = matched
+        c["via_glossary"] = linked
+        if routed:
+            c["via_symptom"] = symptoms[c["file"]]
         lines = [(i, l.strip()) for i, l in c["lines"] if any(hits(l, g) for g in groups)][:3]
+        if (linked or routed) and not lines:
+            lines = [(i, l.strip()) for i, l in c["lines"] if l.strip()][:3]
         scored.append((score, c, lines))
     scored.sort(key=lambda x: -x[0])
     return scored[:top]
@@ -1019,17 +1142,37 @@ def autosync_state() -> dict:
         return {}
 
 
+def repository_operation_lock(d: Path):
+    """Share one local lock across save and sync transactions for this checkout."""
+    gd = Path(git("rev-parse", "--absolute-git-dir", cwd=d).stdout.strip())
+    return local_file_lock(gd / "memory-use-operation.lock")
+
+
+def repository_operation_in_progress(d: Path) -> bool:
+    gd = Path(git("rev-parse", "--absolute-git-dir", cwd=d).stdout.strip())
+    return any((gd / x).exists() for x in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD"))
+
+
 def autosync_once(d: Path) -> tuple[bool, str]:
+    try:
+        with repository_operation_lock(d):
+            return _autosync_locked(d)
+    except TimeoutError:
+        return False, "skipped: another memory-use operation owns this checkout; retry later"
+
+
+def _autosync_locked(d: Path) -> tuple[bool, str]:
     """fetch; fast-forward or rebase onto upstream; push local commits. Never commits, never stashes,
     never touches a repo mid-rebase/merge. Uncommitted edits (maybe another session's) are left alone."""
-    gd = d / ".git"
-    if any((gd / x).exists() for x in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD")):
+    if repository_operation_in_progress(d):
         return False, "skipped: a rebase/merge is in progress"
-    f = git("fetch", "-q", "origin", cwd=d, check=False)
-    if f.returncode:
-        return False, "fetch failed (offline?): " + (f.stderr.strip().splitlines() or ["?"])[-1]
     if git("rev-parse", "--abbrev-ref", "@{u}", cwd=d, check=False).returncode:
         return False, "skipped: current branch has no upstream"
+    branch = git("symbolic-ref", "--short", "HEAD", cwd=d).stdout.strip()
+    remote = git("config", "--get", f"branch.{branch}.remote", cwd=d).stdout.strip()
+    f = git("fetch", "-q", remote, cwd=d, check=False)
+    if f.returncode:
+        return False, "fetch failed (offline?): " + (f.stderr.strip().splitlines() or ["?"])[-1]
     counts = git("rev-list", "--left-right", "--count", "HEAD...@{u}", cwd=d).stdout.split()
     ahead, behind = int(counts[0]), int(counts[1])
     dirty = bool(git("status", "--porcelain", "--untracked-files=no", cwd=d).stdout.strip())
@@ -1063,23 +1206,10 @@ def autosync_run() -> int:
     if not (d / ".git").exists():
         ok, msg = False, f"no repo at {d}"
     else:
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
-        lock = STATE_DIR / "autosync.lock"
-        try:
-            if lock.exists() and time.time() - lock.stat().st_mtime > 600:
-                lock.unlink()
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            print("autosync: another run is in progress")
-            return 0
-        try:
-            ok, msg = autosync_once(d)
-        finally:
-            os.close(fd)
-            lock.unlink(missing_ok=True)
+        ok, msg = autosync_once(d)
     now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps({"at": now, "ok": ok, "result": msg, "repo": str(d)}, ensure_ascii=False) + "\n")
+    atomic_write_text(STATE_FILE, json.dumps({"at": now, "ok": ok, "result": msg, "repo": str(d)}, ensure_ascii=False) + "\n")
     print(f"{now} {'ok' if ok else 'WARN'} {msg}")
     return 0 if ok else 1
 
@@ -1115,6 +1245,11 @@ def cmd_doctor(_a) -> int:
     slug = repo_slug()
     line(bool(slug), f"notes repo: {slug or '(not configured — run init)'}; config {CONFIG}")
     line((d / ".git").exists(), f"checkout at {d}")
+    try:
+        session_store(strict=True)
+        line(True, "hook state: readable (or not created yet)")
+    except (OSError, ValueError):
+        line(False, f"hook state unreadable: {STATE_DIR / 'nudged.json'} — preserved; inspect it before moving it aside")
     if not (d / ".git").exists():
         print("     run: memory_use.py init --repo <owner>/<name>")
         return 1
@@ -1270,7 +1405,7 @@ ABS_PATH = re.compile(r"(?<![\w.:/~])~?/[^\s`'\")]+")
 
 def prompt_mentions(root: Path, prompt: str, limit: int = 3) -> list[str]:
     """Glossary concepts (by first alias) and section names that a user message mentions."""
-    low = prompt.lower()
+    low = search_text(prompt)
     found: list[str] = []
     for g in load_glossary(root):
         for alias in g:
@@ -1286,22 +1421,104 @@ def prompt_mentions(root: Path, prompt: str, limit: int = 3) -> list[str]:
     return found[:limit]
 
 
-def session_store() -> dict:
+@contextmanager
+def local_file_lock(path: Path, timeout: float = 1.0):
+    """Bounded, OS-owned lock. Keep the inode; process death releases the lock."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        # Windows locks a byte range, including when the file was just created.
+        if path.stat().st_size == 0:
+            handle.write(b"\0")
+            handle.flush()
+        deadline = time.monotonic() + timeout
+        if os.name == "nt":
+            import msvcrt
+            def acquire():
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            def release():
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            def acquire():
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            def release():
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        while True:
+            try:
+                acquire()
+                break
+            except OSError as e:
+                if e.errno not in (errno.EACCES, errno.EAGAIN):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"timed out waiting for {path.name}") from e
+                time.sleep(0.01)
+        try:
+            yield
+        finally:
+            release()
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Readers see a complete old or new file; exceptions leave the old file intact."""
+    if path.is_symlink():
+        raise OSError("refusing to replace a symlink state file")
+    mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
+    if path.exists() and not os.access(path, os.W_OK):
+        raise PermissionError(f"state file is read-only: {path.name}")
+    fd, name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    temp = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            os.chmod(temp, mode)
+            out.write(text)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def session_store(strict: bool = False) -> dict:
     """Per-session hook memory (STATE_DIR/nudged.json): {session_id: {t, concepts, fails}}; a day's worth."""
     try:
         seen = json.loads((STATE_DIR / "nudged.json").read_text())
-    except (OSError, ValueError):
+    except FileNotFoundError:
         seen = {}
+    except (OSError, ValueError):
+        if strict:
+            raise
+        seen = {}
+    if not isinstance(seen, dict):
+        if strict:
+            raise ValueError("hook state is not an object")
+        return {}
     now = int(time.time())
-    return {k: v for k, v in seen.items() if isinstance(v, dict) and now - v.get("t", 0) < 86400}
+    return {k: v for k, v in seen.items() if isinstance(v, dict)
+            and isinstance(v.get("t"), (int, float)) and now - v["t"] < 86400}
 
 
-def save_session_store(seen: dict) -> None:
-    try:
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
-        (STATE_DIR / "nudged.json").write_text(json.dumps(seen))
-    except OSError:
-        pass
+@contextmanager
+def session_update():
+    """One transaction covers read, modification and atomic replacement, not only write."""
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(local_file_lock(STATE_DIR / "nudged.lock"))
+            seen = session_store(strict=True)
+        except (OSError, ValueError):
+            # Hook state is best-effort. On contention or corruption, do not
+            # overwrite anything or block the user's business command.
+            yield None
+            return
+        original = json.dumps(seen, sort_keys=True)
+        yield seen
+        if json.dumps(seen, sort_keys=True) != original:
+            try:
+                atomic_write_text(STATE_DIR / "nudged.json", json.dumps(seen))
+            except OSError:
+                pass
 
 
 def not_yet_nudged(sid: str, concepts: list[str]) -> list[str]:
@@ -1309,28 +1526,30 @@ def not_yet_nudged(sid: str, concepts: list[str]) -> list[str]:
     MemT stores at most one experience per episode: a repeated nudge is noise, and noise costs the agent."""
     if not sid:
         return concepts
-    seen = session_store()
-    s = seen.setdefault(sid, {})
-    done = s.get("concepts", [])
-    new = [c for c in concepts if c not in done]
-    if new:
-        s.update(t=int(time.time()), concepts=done + new)
-        save_session_store(seen)
-    return new
+    with session_update() as seen:
+        if seen is None:
+            return []
+        s = seen.setdefault(sid, {})
+        done = s.get("concepts", [])
+        new = [c for c in concepts if c not in done]
+        if new:
+            s.update(t=int(time.time()), concepts=done + new)
+        return new
 
 
 def failure_count(sid: str, cmd: str) -> int:
     """How many times this exact command has failed in this session, counting this failure."""
     if not sid:
         return 1
-    seen = session_store()
-    s = seen.setdefault(sid, {})
-    fails = s.setdefault("fails", {})
-    key = " ".join(cmd.split())[:300]
-    fails[key] = fails.get(key, 0) + 1
-    s["t"] = int(time.time())
-    save_session_store(seen)
-    return fails[key]
+    with session_update() as seen:
+        if seen is None:
+            return 1
+        s = seen.setdefault(sid, {})
+        fails = s.setdefault("fails", {})
+        key = " ".join(cmd.split())[:300]
+        fails[key] = fails.get(key, 0) + 1
+        s["t"] = int(time.time())
+        return fails[key]
 
 
 NOISE_WORDS = {"error", "errors", "failed", "failure", "fatal", "warning", "the", "and", "for", "with", "not", "no",
@@ -1400,14 +1619,15 @@ def note_lesson(sid: str, about: str) -> None:
     A failure after the question was asked (the agent was still stuck then) arms it again."""
     if not sid:
         return
-    seen = session_store()
-    s = seen.setdefault(sid, {})
-    s["t"] = int(time.time())
-    lessons = s.setdefault("lessons", [])
-    if not any(x["about"] == about and not x.get("asked") for x in lessons):
-        lessons.append({"about": about, "t": s["t"]})
-        log_lesson("failed", sid, about)
-    save_session_store(seen)
+    with session_update() as seen:
+        if seen is None:
+            return
+        s = seen.setdefault(sid, {})
+        s["t"] = int(time.time())
+        lessons = s.setdefault("lessons", [])
+        if not any(x["about"] == about and not x.get("asked") for x in lessons):
+            lessons.append({"about": about, "t": s["t"]})
+            log_lesson("failed", sid, about)
 
 
 def stop_reminder(d: Path, ev: dict) -> str | None:
@@ -1417,23 +1637,24 @@ def stop_reminder(d: Path, ev: dict) -> str | None:
     sid = str(ev.get("session_id") or "")
     if not sid or ev.get("stop_hook_active"):
         return None
-    seen = session_store()
-    lessons = seen.get(sid, {}).get("lessons", [])
-    open_ = [x for x in lessons if not x.get("saved")]
-    if not open_:
-        return None
-    # --since is inclusive and second-grained: a commit in the failure's own second predates the lesson
-    since = min(x["t"] for x in open_) + 1
-    commits = [int(c) for c in git("log", f"--since=@{since}", "--format=%ct", cwd=d, check=False).stdout.split()]
-    for x in open_:
-        if any(c > x["t"] for c in commits):          # saved after this failure (maybe after being asked)
-            x["saved"] = True
-            log_lesson("saved", sid, x["about"])
-    pending = [x for x in open_ if not x.get("saved") and not x.get("asked")]
-    for x in pending:
-        x["asked"] = True
-        log_lesson("asked", sid, x["about"])
-    save_session_store(seen)
+    with session_update() as seen:
+        if seen is None:
+            return None
+        lessons = seen.get(sid, {}).get("lessons", [])
+        open_ = [x for x in lessons if not x.get("saved")]
+        if not open_:
+            return None
+        # --since is inclusive and second-grained: a commit in the failure's own second predates the lesson
+        since = min(x["t"] for x in open_) + 1
+        commits = [int(c) for c in git("log", f"--since=@{since}", "--format=%ct", cwd=d, check=False).stdout.split()]
+        for x in open_:
+            if any(c > x["t"] for c in commits):
+                x["saved"] = True
+                log_lesson("saved", sid, x["about"])
+        pending = [x for x in open_ if not x.get("saved") and not x.get("asked")]
+        for x in pending:
+            x["asked"] = True
+            log_lesson("asked", sid, x["about"])
     if not pending:
         return None
     about = ", ".join(dict.fromkeys(x["about"] for x in pending))
@@ -1447,11 +1668,11 @@ def log_lesson(event: str, sid: str, about: str) -> None:
     """Append to STATE_DIR/lessons.jsonl, which outlives the day-long session store; `lessons` reads it."""
     f = STATE_DIR / "lessons.jsonl"
     try:
-        f.parent.mkdir(parents=True, exist_ok=True)
-        with f.open("a") as out:
-            out.write(json.dumps({"t": int(time.time()), "event": event, "session": sid, "about": about}) + "\n")
-        if f.stat().st_size > 512_000:                    # keep the newest ~2000 events
-            f.write_text("\n".join(f.read_text().splitlines()[-2000:]) + "\n")
+        with local_file_lock(STATE_DIR / "lessons.lock"):
+            with f.open("a") as out:
+                out.write(json.dumps({"t": int(time.time()), "event": event, "session": sid, "about": about}) + "\n")
+            if f.stat().st_size > 512_000:
+                atomic_write_text(f, "\n".join(f.read_text().splitlines()[-2000:]) + "\n")
     except OSError:
         pass
 
@@ -1541,21 +1762,10 @@ def cmd_hook(a) -> int:
 
 def cmd_sync(_a) -> int:
     d = need_repo()
-    dirty = git("status", "--porcelain", cwd=d).stdout.strip()
-    r = git("pull", "--rebase", "-q", *(["--autostash"] if dirty else []), cwd=d, check=False)
-    if r.returncode:
-        print(r.stderr.strip() or r.stdout.strip())
-        gd = Path(git("rev-parse", "--absolute-git-dir", cwd=d).stdout.strip())
-        if any((gd / x).exists() for x in ("rebase-merge", "rebase-apply")):
-            git("rebase", "--abort", cwd=d, check=False)
-            print("rebase conflicts: aborted, your local commits are untouched — resolve by hand")
-        return r.returncode
-    ahead = git("rev-list", "--count", "@{u}..HEAD", cwd=d, check=False).stdout.strip()
-    if ahead not in ("", "0"):
-        ok, err = safe_push(d)
-        print(f"pushed {ahead} local commit(s)" if ok else "push failed: " + err)
+    ok, result = autosync_once(d)
+    print(result)
     print(git("log", "--oneline", "-1", cwd=d).stdout.strip())
-    return 0
+    return 0 if ok else 1
 
 
 def cmd_ls(_a) -> int:
@@ -1577,7 +1787,11 @@ def cmd_show(a) -> int:
     if not target.exists():
         sys.exit(f"not found: {a.target}")
     print(f"# {target.relative_to(d)}\n")
-    print(target.read_text())
+    text = target.read_text()
+    warning = review_warning(text)
+    if warning:
+        print(f"WARN {warning}\n")
+    print(text)
     return 0
 
 
@@ -1588,7 +1802,14 @@ def cmd_search(a) -> int:
         print("no match — try fewer words, or an alias (see glossary.md)")
         return 1
     for score, c, lines in res:
-        print(f"[{score:4.1f}] {c['file']}:{c['line']}  ‹{c['path'] or c['file']}›")
+        via = " [symptom link]" if c.get("via_symptom") else " [glossary link]" if c.get("via_glossary") else ""
+        print(f"[{score:4.1f}] {c['file']}:{c['line']}  ‹{c['path'] or c['file']}›{via}")
+        if c.get("via_symptom"):
+            route = c["via_symptom"]
+            print(f"        trigger: {route['source']}:{route['line']} ‹{route['condition'][:120]}›")
+        warning = review_warning((d / c["file"]).read_text(errors="ignore"))
+        if warning:
+            print(f"        WARN {warning}")
         for i, l in lines:
             print(f"        {i}: {l[:150]}")
     return 0
@@ -1612,18 +1833,7 @@ def eval_cases(root: Path) -> list[tuple[str, str, str, str]]:
             if line.startswith("- ") and m and (root / m[1]).exists():
                 names = re.split(r"\s+—\s+", line[2:], maxsplit=1)[0]
                 cases.append(("glossary", names.split(" / ")[0].strip().strip("`"), m[1], ""))   # every alias ranks alike
-    for readme in sorted(root.glob("*/README.md")):
-        rows = re.split(r"^##\s+(?:出问题先看这里|Troubleshooting|If something breaks)\s*$", readme.read_text(), flags=re.M | re.I)
-        for line in rows[1].split("\n## ")[0].splitlines() if len(rows) > 1 else []:
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            if len(cells) < 2 or set(cells[0]) <= set("-: ") or cells[0] in ("现象", "Symptom"):
-                continue
-            for target in re.findall(r"\]\(([^)#\s]+\.md)|(?<![\w/.(])([\w.-]+\.md)\b", cells[1]):
-                f = (readme.parent / (target[0] or target[1])).resolve()
-                if f.exists() and f.name != "README.md" and root.resolve() in f.parents:
-                    cases.append(("trouble", cells[0].replace("`", ""), str(f.relative_to(root.resolve())),
-                                  str(readme.relative_to(root))))
-                    break
+    cases += [("trouble", row["condition"], row["target"], row["source"]) for row in trouble_routes(root)]
     for p in md_files(root):
         rel = str(p.relative_to(root))
         if "/" in rel and p.name not in ("README.md", "todo.md"):
@@ -1634,34 +1844,107 @@ def eval_cases(root: Path) -> list[tuple[str, str, str, str]]:
 
 
 def cmd_eval(a) -> int:
-    """How often search puts the right article first (hit@1), in the top 3, and its mean reciprocal rank.
-    MemT's coding agents gained more from picking the right experience than from where it was stored."""
+    """Measure file ranking and whether the actual budgeted brief retains the expected note."""
     d = need_repo()
-    cases = eval_cases(d)
+    if a.max < 128:
+        sys.exit("--max must be at least 128")
+    if a.cases:
+        path = Path(a.cases).expanduser().resolve()
+        if d.resolve() in path.parents and path != (d / "evals.md").resolve():
+            sys.exit("--cases must be outside the notes repo (or its excluded evals.md), so questions cannot answer themselves")
+        try:
+            lines = path.read_text().splitlines()
+        except OSError as e:
+            sys.exit(f"cannot read cases: {e}")
+        cases = [("manual", m[1], m[2], "") for m in map(EVAL_LINE.match, lines) if m]
+    else:
+        cases = eval_cases(d)
     if not cases:
-        print("no eval cases — add `- <question words> → <section>/<article>.md` lines to evals.md")
+        message = "no eval cases — add `- <question words> → <section>/<article>.md` lines to evals.md"
+        print(json.dumps({"error": message, "cases": [], "summary": {}}, ensure_ascii=False) if a.json else message)
         return 1
-    stats: dict[str, list[float]] = {}
-    misses = []
+    report = evaluate_recall(d, cases, a.max)
+    if a.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1 if report["summary"]["all"]["invalid"] else 0
+    print(f"{'source':<10} {'cases':>5} {'hit@1':>6} {'hit@3':>6} {'MRR':>5} {'brief':>6} {'invalid':>7}")
+    for source, s in report["summary"].items():
+        print(f"{source:<10} {s['cases']:>5} {s['hit_at_1']:>6.0%} {s['hit_at_3']:>6.0%} "
+              f"{s['mrr']:>5.2f} {s['brief_present']:>6.0%} {s['invalid']:>7}")
+    print(f"\nbrief: expected note has a complete entry and an excerpt within {a.max} characters; not answer correctness")
+    misses = [c for c in report["cases"] if c["rank"] != 1 or c["brief_status"] != "present"]
+    if misses and a.misses:
+        print(f"\nrecall gaps ({len(misses)}):")
+        for c in misses[:a.misses]:
+            print(f"  [{c['source']}] {c['query']!r} → {c['expected']} at {c['rank'] or 'miss'}; "
+                  f"brief: {c['brief_status']}; top: {', '.join(c['top']) or '-'}")
+    return 1 if report["summary"]["all"]["invalid"] else 0
+
+
+BRIEF_ENTRY = re.compile(r"^- (.+\.md):\d+ ‹.*›(?: \[(?:glossary|symptom) link\])?$")
+
+
+def brief_sources(text: str) -> dict[str, list[str]]:
+    """Source excerpts only: routing conditions, warnings and labels are not answers."""
+    sources: dict[str, list[str]] = {}
+    current = None
+    for line in text.splitlines():
+        entry = BRIEF_ENTRY.match(line)
+        if entry:
+            current = entry[1]
+        elif line.startswith("    ") and current:
+            content = line.strip()
+            if content and not content.startswith(("WARN ", "trigger: ", "要点/key points:")):
+                sources.setdefault(current, []).append(content)
+        elif line.strip():
+            current = None
+    return sources
+
+
+def brief_files(text: str) -> set[str]:
+    """Only count complete note entries with source text, not a path cut off by the budget."""
+    return set(brief_sources(text))
+
+
+def evaluate_recall(root: Path, cases: list[tuple[str, str, str, str]], max_chars: int = 6000) -> dict:
+    """Use the production renderer; distinguish retrieval, selection, and budget losses."""
+    records = []
+    searchable = {str(p.relative_to(root)) for p in md_files(root)} - {"evals.md"}
     for source, query, want, skip in cases:
+        target = (root / want).resolve()
+        expected = str(target.relative_to(root.resolve())) if root.resolve() in target.parents else want
+        valid = expected in searchable and target.is_file() and root.resolve() in target.parents
         files: list[str] = []
-        for _s, c, _l in rank(d, query.split(), top=20):
+        # Rank all chunks, then dedupe files. Twenty chunks from one long note
+        # must not turn the second matching file into a false miss.
+        for _s, c, _l in rank(root, query.split(), top=None) if valid else []:
             if c["file"] not in files and c["file"] not in ("glossary.md", skip):
                 files.append(c["file"])
-        pos = files.index(want) + 1 if want in files else 0
-        stats.setdefault(source, []).append(pos)
-        if pos != 1:
-            misses.append((source, query, want, pos, files[:3]))
-    print(f"{'source':<10} {'cases':>5} {'hit@1':>6} {'hit@3':>6} {'MRR':>5}")
-    for source, ps in [*stats.items(), ("all", [p for ps in stats.values() for p in ps])]:
-        n = len(ps)
-        print(f"{source:<10} {n:>5} {sum(p == 1 for p in ps) / n:>6.0%} {sum(0 < p <= 3 for p in ps) / n:>6.0%} "
-              f"{sum(1 / p for p in ps if p) / n:>5.2f}")
-    if misses and a.misses:
-        print(f"\nnot ranked first ({len(misses)}):")
-        for source, query, want, pos, got in misses[: a.misses]:
-            print(f"  [{source}] {query!r} → {want} at {pos or 'miss'}; top: {', '.join(got) or '-'}")
-    return 0
+        pos = files.index(expected) + 1 if expected in files else 0
+        if not valid:
+            status = "invalid-target"
+        elif not pos:
+            status = "not-retrieved"
+        else:
+            selected = brief_matches(rank(root, query.split(), top=48))
+            if expected not in {c["file"] for _, c, _ in selected}:
+                status = "filtered"
+            else:
+                text = render_brief(root, query.split(), max_chars)
+                status = "present" if expected in brief_files(text or "") else "budget-or-no-excerpt"
+        records.append({"source": source, "query": query, "expected": want, "rank": pos,
+                        "brief_status": status, "top": files[:3], "valid": valid})
+    summary = {}
+    for source in dict.fromkeys([c["source"] for c in records] + ["all"]):
+        rows = [c for c in records if source == "all" or c["source"] == source]
+        valid = [c for c in rows if c["valid"]]
+        n = len(valid) or 1
+        summary[source] = {"cases": len(rows), "valid_cases": len(valid), "invalid": len(rows) - len(valid),
+                           "hit_at_1": sum(c["rank"] == 1 for c in valid) / n,
+                           "hit_at_3": sum(0 < c["rank"] <= 3 for c in valid) / n,
+                           "mrr": sum(1 / c["rank"] for c in valid if c["rank"]) / n,
+                           "brief_present": sum(c["brief_status"] == "present" for c in valid) / n}
+    return {"max_chars": max_chars, "summary": summary, "cases": records}
 
 
 def section_of(file: str) -> str:
@@ -1729,23 +2012,95 @@ def brief_matches(results: list, limit: int = 6) -> list:
     return selected
 
 
+def pack_brief(text: str, max_chars: int) -> str:
+    """Pack usable source entries before background, preserving a hard character cap."""
+    if len(text) <= max_chars:
+        return text
+    suffix = f"\n…(truncated at {max_chars} chars; use show/search for more)"
+    limit = max_chars - len(suffix)
+    lines = text.splitlines()
+    try:
+        start = lines.index("## best matching notes")
+    except ValueError:
+        # Section-only overviews have no source entries to reserve space for.
+        prefix = text[:limit]
+        return (prefix.rsplit("\n", 1)[0] if "\n" in prefix else prefix) + suffix
+    head = lines[:start + 1]
+    if len("\n".join(head)) > limit:
+        head = [head[0], "", head[-1]]
+    if len("\n".join(head)) > limit:
+        room = max(1, limit - len(head[-1]) - 3)
+        head[0] = head[0][:room - 1] + "…"
+    out = "\n".join(head)
+    entries, tail = [], []
+    current = None
+    for index, line in enumerate(lines[start + 1:], start + 1):
+        if line.startswith("## "):
+            if current is not None:
+                entries.append(current)
+                current = None
+            tail = lines[index:]
+            break
+        if BRIEF_ENTRY.match(line):
+            if current is not None:
+                entries.append(current)
+            current = [line]
+        elif current is not None:
+            current.append(line)
+    if current is not None:
+        entries.append(current)
+    for entry in entries:
+        sources = [line for line in entry[1:] if line.startswith("    ")
+                   and line.strip() and not line.strip().startswith(("WARN ", "trigger: ", "要点/key points:"))]
+        if not sources:
+            continue
+        warnings = [line for line in entry[1:] if line.strip().startswith("WARN ")]
+        header = entry[0]
+        if len(header) > 160:
+            header = re.sub(r"‹(.*)›", lambda m: "‹" + m[1][:79] + "…›", header)
+        source = sources[0]
+        compact = [header, *warnings, source[:159] + "…" if len(source) > 160 else source]
+        block = "\n".join(entry).rstrip()
+        room = limit - len(out) - 1
+        # One huge key point must not consume every later source's allocation.
+        if len(block) > 320 or len(block) > room:
+            block = "\n".join(compact)
+        if len(block) > room:
+            fixed = "\n".join(compact[:-1])
+            excerpt_room = room - len(fixed) - 1
+            if excerpt_room < 24:
+                continue
+            block = fixed + "\n" + source[:excerpt_room - 1] + "…"
+        out += "\n" + block
+    for line in tail:
+        if len(out) + len(line) + 1 > limit:
+            break
+        out += "\n" + line
+    return out + suffix
+
+
 def cmd_brief(a) -> int:
-    """Context pack for a topic, most useful first: best matching notes (with their key points), open todos,
-    trimmed section summaries, recent changes. Truncation drops from the end, so the matches survive."""
     d = need_repo()
     if a.max < 128 or a.readme_lines < 1:
         sys.exit("--max must be at least 128 and --readme-lines must be positive")
+    text = render_brief(d, a.topic, a.max, a.readme_lines)
+    print(text if text is not None else "no match — try fewer words, or an alias (see glossary.md)")
+    return 0 if text is not None else 1
+
+
+def render_brief(d: Path, topic: list[str], max_chars: int = 6000, readme_lines: int = 25) -> str | None:
+    """Context pack for a topic, most useful first: best matching notes (with their key points), open todos,
+    trimmed section summaries, recent changes. Tight budgets reserve usable source entries before background."""
     secs = [n for n, _ in sections(d)]
     glossary = load_glossary(d)
-    wanted = [t.lower() for t in a.topic]
-    groups = expand(a.topic, glossary) if a.topic else []
-    res = brief_matches(rank(d, a.topic, top=48)) if a.topic else []
-    if a.topic and not res:
-        print("no match — try fewer words, or an alias (see glossary.md)")
-        return 1
+    wanted = [search_text(t) for t in topic]
+    groups = expand(topic, glossary) if topic else []
+    res = brief_matches(rank(d, topic, top=48)) if topic else []
+    if topic and not res:
+        return None
     # A section name or its glossary alias alone asks for the whole section.
     broad_sections = [s for s in secs if len(groups) == 1 and any(x.text == s for x in groups[0])]
-    broad = not a.topic or bool(broad_sections)
+    broad = not topic or bool(broad_sections)
     chosen = [s for s in secs if s in wanted]
     chosen += [s for s in broad_sections if s not in chosen]
     if res:
@@ -1757,11 +2112,11 @@ def cmd_brief(a) -> int:
             if (s in secs and s not in chosen and len(chosen) < 2 and not c["file"].endswith("README.md")
                     and score >= 0.5 * top and any(hits(c["heading"] + "\n" + c["file"], g) for g in groups)):
                 chosen.append(s)
-    if not a.topic:
+    if not topic:
         chosen = secs
     out: list[str] = []
     emit = out.append
-    emit(f"# brief: {' '.join(a.topic) or '(all)'}  — {dt.date.today().isoformat()}, repo {git('log', '-1', '--format=%h %ad', '--date=short', cwd=d).stdout.strip()}")
+    emit(f"# brief: {' '.join(topic) or '(all)'}  — {dt.date.today().isoformat()}, repo {git('log', '-1', '--format=%h %ad', '--date=short', cwd=d).stdout.strip()}")
     aliases = sorted({x.text for g in groups for x in g} - set(wanted))
     if aliases:
         emit(f"aliases: {', '.join(aliases[:12])}")
@@ -1770,7 +2125,14 @@ def cmd_brief(a) -> int:
         shown_points: set[str] = set()
         points: dict[str, list[str]] = {}
         for score, c, lines in res:
-            emit(f"- {c['file']}:{c['line']} ‹{c['path'] or c['file']}›")
+            via = " [symptom link]" if c.get("via_symptom") else " [glossary link]" if c.get("via_glossary") else ""
+            emit(f"- {c['file']}:{c['line']} ‹{c['path'] or c['file']}›{via}")
+            if c.get("via_symptom"):
+                route = c["via_symptom"]
+                emit(f"    trigger: {route['source']}:{route['line']} ‹{route['condition'][:120]}›")
+            warning = review_warning((d / c["file"]).read_text(errors="ignore"))
+            if warning:
+                emit(f"    WARN {warning}")
             top_of_file = " › " not in c["path"] or c["line"] <= 3     # key points describe the article, not a mid-file section
             if (top_of_file and len(shown_points) < 2 and c["file"] not in shown_points
                     and not c["file"].endswith(("README.md", "todo.md"))):
@@ -1797,7 +2159,7 @@ def cmd_brief(a) -> int:
         readme = d / s / "README.md"
         if readme.exists():
             emit(f"\n## {s}/README.md (summary; full: `show {s}`)")
-            summary = readme_summary(readme.read_text(), a.readme_lines, None if broad else groups)
+            summary = readme_summary(readme.read_text(), readme_lines, None if broad else groups)
             if summary:
                 emit(summary)
     history_paths = chosen if broad else sorted({c["file"] for _, c, _ in res})
@@ -1807,19 +2169,36 @@ def cmd_brief(a) -> int:
     if log:
         emit("\n## recent changes")
         emit(log)
-    text = "\n".join(out)
-    if len(text) > a.max:
-        suffix = f"\n…(truncated at {a.max} chars; use show/search for more)"
-        prefix = text[:a.max - len(suffix)]
-        text = (prefix.rsplit("\n", 1)[0] if "\n" in prefix else prefix) + suffix
-    print(text)
-    return 0
+    return pack_brief("\n".join(out), max_chars)
 
 
 UPDATED = re.compile(r"(?:更新|Updated)[：:]\s*(\d{4}-\d{2}-\d{2})", re.I)
 # per-article review interval: `· 复核：30d` / `· Review: 30d`, or 长期 / never for facts that do not drift.
 # Like MemT's forget gates, which start every memory channel at its own half-life instead of one shared rate.
 REVIEW = re.compile(r"(?:复核|Review)[：:]\s*(?:(\d+)\s*(?:d|天|days?)\b|(长期|不复核|never))", re.I)
+STATUS = re.compile(r"(?:状态|Status)[：:]\s*([^·|\n]+)", re.I)
+
+
+def review_warning(text: str) -> str | None:
+    """Use the note's explicit update/review metadata, never its access frequency."""
+    head = "\n".join(text.splitlines()[:8])
+    status = STATUS.search(head)
+    if status and re.match(r"已废弃|deprecated\b|obsolete\b", status[1], re.I):
+        return "marked deprecated — verify a current replacement before using"
+    updated = UPDATED.search(head)
+    if not updated:
+        return None
+    try:
+        age = (dt.date.today() - dt.date.fromisoformat(updated[1])).days
+    except ValueError:
+        return f"invalid update date {updated[1]} — fix the note's metadata"
+    review = REVIEW.search(head)
+    limit = None if review and review[2] else int(review[1]) if review else STALE_DAYS
+    if limit is not None and age > limit:
+        return f"last updated {age} days ago (review every {limit}) — re-verify before using"
+    return None
+
+
 # router-style LAN addresses (x.x.x.1 / .254) repeat at every site, so as a glossary alias they tie unrelated places together
 GATEWAY_IP = re.compile(r"(10|192\.168|172\.(1[6-9]|2\d|3[01]))(\.\d{1,3}){1,2}\.(1|254)")
 
@@ -1859,7 +2238,6 @@ def near_duplicates(root: Path, threshold: float = 0.6) -> list[tuple[str, str, 
 def cmd_lint(a) -> int:
     d = need_repo()
     warns: list[str] = []
-    today = dt.date.today()
     listed = {n for n, desc in sections(d) if "not listed" not in desc}
     for p in sorted(d.iterdir()):
         if p.is_dir() and p.name not in SKIP_DIRS and not p.name.startswith(".") and (p / "README.md").exists():
@@ -1882,13 +2260,9 @@ def cmd_lint(a) -> int:
                 warns.append(f"{rel}: no `> 更新：YYYY-MM-DD · 状态：…` (or `> Updated: YYYY-MM-DD · Status: …`) line near the top")
             if not any(KEYPOINTS.match(l.strip()) for l in lines[:8]):
                 warns.append(f"{rel}: no **要点** / **Key points** (2–4 bullet summary) near the top")
-            if m:
-                age = (today - dt.date.fromisoformat(m.group(1))).days
-                r = REVIEW.search(head)
-                limit = None if r and r.group(2) else int(r.group(1)) if r else STALE_DAYS
-                if limit is not None and age > limit and not re.search(r"已废弃|deprecated|obsolete", head, re.I):
-                    warns.append(f"{rel}: last updated {age} days ago (review every {limit}) — re-verify and bump 更新, "
-                                 "set `· 复核：<N>d` / `长期`, or mark 已废弃 / move to archive/")
+            warning = review_warning(text)
+            if warning and "marked deprecated" not in warning:
+                warns.append(f"{rel}: {warning}")
         if p.name == "todo.md":
             n_open = len(re.findall(r"^\s*- \[ \]", text, re.M))
             n_done = len(re.findall(r"^\s*- \[x\]", text, re.M | re.I))
@@ -2005,6 +2379,18 @@ def cmd_save(a) -> int:
     d = need_repo()
     if not a.paths:
         sys.exit("save needs explicit paths (never `git add -A`: other sessions may have uncommitted work here)")
+    try:
+        with repository_operation_lock(d):
+            return _save_locked(a, d)
+    except TimeoutError:
+        print("save skipped: another memory-use operation owns this checkout; retry later")
+        return 1
+
+
+def _save_locked(a, d: Path) -> int:
+    if repository_operation_in_progress(d):
+        print("save skipped: a rebase/merge is in progress; files and index left alone")
+        return 1
     staged_del = set(git("diff", "--cached", "--name-only", "--diff-filter=D", cwd=d).stdout.split("\n"))
     to_add = []
     for path in a.paths:
@@ -2025,7 +2411,13 @@ def cmd_save(a) -> int:
         return 1
     if not git("diff", "--cached", "--name-only", "--", *a.paths, cwd=d).stdout.strip():
         print("nothing to commit for those paths")
-        return 0
+        # A previous attempt may have committed successfully but failed to push.
+        # Retrying save must check that pending history, even without a new edit.
+        if a.no_push:
+            return 0
+        ok, result = _autosync_locked(d)
+        print(result)
+        return 0 if ok else 1
     msg = a.message + (f"\n\n{a.trailer}" if a.trailer else "")
     c = git("commit", "-q", "-m", msg, "--", *a.paths, cwd=d, check=False)   # only these paths, never others' staged work
     if c.returncode:
@@ -2034,19 +2426,11 @@ def cmd_save(a) -> int:
     if a.no_push:
         print("committed locally (not pushed): " + git("log", "--oneline", "-1", cwd=d).stdout.strip())
         return 0
-    git("fetch", "-q", cwd=d, check=False)
-    behind = git("rev-list", "--count", "HEAD..@{u}", cwd=d, check=False).stdout.strip()
-    if behind not in ("", "0"):   # only then: autostash does not restore what other sessions had staged
-        dirty = git("status", "--porcelain", cwd=d).stdout.strip()
-        pull = git("pull", "-q", "--rebase", *(["--autostash"] if dirty else []), cwd=d, check=False)
-        if pull.returncode:
-            print("committed locally, but pull --rebase failed:\n" + (pull.stderr or pull.stdout))
-            return pull.returncode
-    ok, err = safe_push(d)
+    ok, result = _autosync_locked(d)
     if not ok:
-        print("committed locally, not pushed:\n" + err)
+        print("committed locally, not synced:\n" + result)
         return 1
-    print("pushed " + git("log", "--oneline", "-1", cwd=d).stdout.strip())
+    print(result + "\n" + git("log", "--oneline", "-1", cwd=d).stdout.strip())
     return 0
 
 
@@ -2069,7 +2453,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("path", help="print the repo path").set_defaults(fn=cmd_path)
     sub.add_parser("clone", help="clone the configured repo if missing").set_defaults(fn=cmd_clone)
     sub.add_parser("doctor", help="check config, repo, sync state, hook, skill install, autosync").set_defaults(fn=cmd_doctor)
-    sub.add_parser("sync", help="pull latest (rebase, autostash if dirty) and push local commits").set_defaults(fn=cmd_sync)
+    sub.add_parser("sync", help="pull latest and push local commits; never stash uncommitted edits").set_defaults(fn=cmd_sync)
     s = sub.add_parser("autosync", help="background pull/push on a timer (launchd / systemd / cron / Task Scheduler): on | off | status | run")
     s.add_argument("action", choices=["on", "off", "status", "run"]); s.add_argument("--every", type=int, default=15, help="minutes")
     s.set_defaults(fn=cmd_autosync)
@@ -2079,6 +2463,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("lessons", help="topics and notes that failed commands were pointed at, and whether a fix got saved").set_defaults(fn=cmd_lessons)
     s = sub.add_parser("eval", help="measure search: hit@1 / hit@3 / MRR over evals.md, glossary 见-links and article titles")
     s.add_argument("--misses", type=int, default=15, help="list up to N queries not ranked first (0: none)")
+    s.add_argument("--cases", help="evaluate only a Markdown question set outside the notes repo")
+    s.add_argument("--max", type=int, default=6000, help="brief character budget to evaluate (minimum 128)")
+    s.add_argument("--json", action="store_true", help="structured metrics and per-question recall gaps")
     s.set_defaults(fn=cmd_eval)
     s = sub.add_parser("hook", help="Claude Code hook entry points: prompt (UserPromptSubmit, JSON on stdin) | "
                                     "tool (PostToolUseFailure) | stop (Stop) | session (SessionStart)")

@@ -1,0 +1,102 @@
+--- a/scripts/memory_use.py
++++ b/scripts/memory_use.py
+@@ -1142,29 +1142,12 @@
+         return {}
+ 
+ 
+-def repository_operation_lock(d: Path):
+-    """Share one local lock across save and sync transactions for this checkout."""
+-    gd = Path(git("rev-parse", "--absolute-git-dir", cwd=d).stdout.strip())
+-    return local_file_lock(gd / "memory-use-operation.lock")
+-
+-
+-def repository_operation_in_progress(d: Path) -> bool:
+-    gd = Path(git("rev-parse", "--absolute-git-dir", cwd=d).stdout.strip())
+-    return any((gd / x).exists() for x in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD"))
+-
+-
+ def autosync_once(d: Path) -> tuple[bool, str]:
+-    try:
+-        with repository_operation_lock(d):
+-            return _autosync_locked(d)
+-    except TimeoutError:
+-        return False, "skipped: another memory-use operation owns this checkout; retry later"
+-
+-
+-def _autosync_locked(d: Path) -> tuple[bool, str]:
+     """fetch; fast-forward or rebase onto upstream; push local commits. Never commits, never stashes,
+     never touches a repo mid-rebase/merge. Uncommitted edits (maybe another session's) are left alone."""
+-    if repository_operation_in_progress(d):
++    # In a linked worktree .git is a pointer file, not the operation directory.
++    gd = Path(git("rev-parse", "--absolute-git-dir", cwd=d).stdout.strip())
++    if any((gd / x).exists() for x in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD")):
+         return False, "skipped: a rebase/merge is in progress"
+     if git("rev-parse", "--abbrev-ref", "@{u}", cwd=d, check=False).returncode:
+         return False, "skipped: current branch has no upstream"
+@@ -1206,10 +1189,23 @@
+     if not (d / ".git").exists():
+         ok, msg = False, f"no repo at {d}"
+     else:
+-        ok, msg = autosync_once(d)
++        STATE_DIR.mkdir(parents=True, exist_ok=True)
++        lock = STATE_DIR / "autosync.lock"
++        try:
++            if lock.exists() and time.time() - lock.stat().st_mtime > 600:
++                lock.unlink()
++            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
++        except FileExistsError:
++            print("autosync: another run is in progress")
++            return 0
++        try:
++            ok, msg = autosync_once(d)
++        finally:
++            os.close(fd)
++            lock.unlink(missing_ok=True)
+     now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+     STATE_DIR.mkdir(parents=True, exist_ok=True)
+-    atomic_write_text(STATE_FILE, json.dumps({"at": now, "ok": ok, "result": msg, "repo": str(d)}, ensure_ascii=False) + "\n")
++    STATE_FILE.write_text(json.dumps({"at": now, "ok": ok, "result": msg, "repo": str(d)}, ensure_ascii=False) + "\n")
+     print(f"{now} {'ok' if ok else 'WARN'} {msg}")
+     return 0 if ok else 1
+ 
+@@ -2379,18 +2375,6 @@
+     d = need_repo()
+     if not a.paths:
+         sys.exit("save needs explicit paths (never `git add -A`: other sessions may have uncommitted work here)")
+-    try:
+-        with repository_operation_lock(d):
+-            return _save_locked(a, d)
+-    except TimeoutError:
+-        print("save skipped: another memory-use operation owns this checkout; retry later")
+-        return 1
+-
+-
+-def _save_locked(a, d: Path) -> int:
+-    if repository_operation_in_progress(d):
+-        print("save skipped: a rebase/merge is in progress; files and index left alone")
+-        return 1
+     staged_del = set(git("diff", "--cached", "--name-only", "--diff-filter=D", cwd=d).stdout.split("\n"))
+     to_add = []
+     for path in a.paths:
+@@ -2413,11 +2397,7 @@
+         print("nothing to commit for those paths")
+         # A previous attempt may have committed successfully but failed to push.
+         # Retrying save must check that pending history, even without a new edit.
+-        if a.no_push:
+-            return 0
+-        ok, result = _autosync_locked(d)
+-        print(result)
+-        return 0 if ok else 1
++        return 0 if a.no_push else cmd_sync(None)
+     msg = a.message + (f"\n\n{a.trailer}" if a.trailer else "")
+     c = git("commit", "-q", "-m", msg, "--", *a.paths, cwd=d, check=False)   # only these paths, never others' staged work
+     if c.returncode:
+@@ -2426,7 +2406,7 @@
+     if a.no_push:
+         print("committed locally (not pushed): " + git("log", "--oneline", "-1", cwd=d).stdout.strip())
+         return 0
+-    ok, result = _autosync_locked(d)
++    ok, result = autosync_once(d)
+     if not ok:
+         print("committed locally, not synced:\n" + result)
+         return 1

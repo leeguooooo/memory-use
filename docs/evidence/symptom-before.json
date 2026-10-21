@@ -1,0 +1,755 @@
+{
+  "scope": "Authored public fixtures. No model calls, no private notes, not a blind agent benchmark.",
+  "queries_provenance": "fixed authored queries, not agent-generated",
+  "module_sha256": "1d056bf6f73eb9dace41293fffdc0f6f956f85aff01e2049da9eb507de325d99",
+  "fixture_sha256": "de467890dd63b1fbef1652e23bdc39e4b95c93f717f185f65f398235a03c96cd",
+  "budget": 1500,
+  "summary": {
+    "development": {
+      "cases": 5,
+      "first_query_evidence": 0,
+      "any_query_evidence": 0,
+      "strong_routing_cases": 0,
+      "unexpected_routing_cases": 0
+    },
+    "heldout_wording": {
+      "cases": 6,
+      "first_query_evidence": 1,
+      "any_query_evidence": 1,
+      "strong_routing_cases": 0,
+      "unexpected_routing_cases": 0
+    },
+    "constraints": {
+      "cases": 10,
+      "first_query_evidence": 0,
+      "any_query_evidence": 0,
+      "strong_routing_cases": 0,
+      "unexpected_routing_cases": 0
+    },
+    "scope": {
+      "cases": 2,
+      "first_query_evidence": 0,
+      "any_query_evidence": 0,
+      "strong_routing_cases": 0,
+      "unexpected_routing_cases": 0
+    },
+    "manual_retry": {
+      "cases": 1,
+      "first_query_evidence": 0,
+      "any_query_evidence": 0,
+      "strong_routing_cases": 0,
+      "unexpected_routing_cases": 0
+    }
+  },
+  "cases": [
+    {
+      "split": "development",
+      "kind": "answerable",
+      "question": "SSH 启动程序桌面上看不到",
+      "queries": [
+        [
+          "SSH",
+          "启动程序桌面上看不到"
+        ]
+      ],
+      "expected": "ops/gui.md",
+      "evidence": [
+        "计划任务",
+        "Interactive"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "SSH",
+            "启动程序桌面上看不到"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "development",
+      "kind": "answerable",
+      "question": "新电脑私人网络提示 Permission denied",
+      "queries": [
+        [
+          "新电脑私人网络提示",
+          "Permission",
+          "denied"
+        ]
+      ],
+      "expected": "ops/client.md",
+      "evidence": [
+        "登记公钥"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "新电脑私人网络提示",
+            "Permission",
+            "denied"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "development",
+      "kind": "answerable",
+      "question": "相机 FTP 传输权限拒绝",
+      "queries": [
+        [
+          "相机",
+          "FTP",
+          "传输权限拒绝"
+        ]
+      ],
+      "expected": "ops/camera.md",
+      "evidence": [
+        "目录写入权限"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "相机",
+            "FTP",
+            "传输权限拒绝"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "development",
+      "kind": "answerable",
+      "question": "缓存清理后磁盘空间仍然不足",
+      "queries": [
+        [
+          "缓存清理后磁盘空间仍然不足"
+        ]
+      ],
+      "expected": "ops/disk.md",
+      "evidence": [
+        "仍被进程打开",
+        "文件句柄"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "缓存清理后磁盘空间仍然不足"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "development",
+      "kind": "answerable",
+      "question": "公司 git 克隆 TLS 证书错误",
+      "queries": [
+        [
+          "公司",
+          "git",
+          "克隆",
+          "TLS",
+          "证书错误"
+        ]
+      ],
+      "expected": "ops/git.md",
+      "evidence": [
+        "公司根证书",
+        "sslVerify=true"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "公司",
+            "git",
+            "克隆",
+            "TLS",
+            "证书错误"
+          ],
+          "target_rank": 2,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "heldout_wording",
+      "kind": "answerable",
+      "question": "请问 SSH 启动的程序桌面看不到怎么办",
+      "queries": [
+        [
+          "请问",
+          "SSH",
+          "启动的程序桌面看不到怎么办"
+        ]
+      ],
+      "expected": "ops/gui.md",
+      "evidence": [
+        "计划任务",
+        "Interactive"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "请问",
+            "SSH",
+            "启动的程序桌面看不到怎么办"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "heldout_wording",
+      "kind": "answerable",
+      "question": "SSH 台式机启动的程序桌面看不到",
+      "queries": [
+        [
+          "SSH",
+          "台式机",
+          "启动的程序桌面看不到"
+        ]
+      ],
+      "expected": "ops/gui.md",
+      "evidence": [
+        "计划任务",
+        "Interactive"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "SSH",
+            "台式机",
+            "启动的程序桌面看不到"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "heldout_wording",
+      "kind": "answerable",
+      "question": "新电脑连接私人网络提示 Permission denied 怎么处理",
+      "queries": [
+        [
+          "新电脑连接私人网络提示",
+          "Permission",
+          "denied",
+          "怎么处理"
+        ]
+      ],
+      "expected": "ops/client.md",
+      "evidence": [
+        "登记公钥"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "新电脑连接私人网络提示",
+            "Permission",
+            "denied",
+            "怎么处理"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "heldout_wording",
+      "kind": "answerable",
+      "question": "相机 FTP 传输时权限拒绝怎么处理",
+      "queries": [
+        [
+          "相机",
+          "FTP",
+          "传输时权限拒绝怎么处理"
+        ]
+      ],
+      "expected": "ops/camera.md",
+      "evidence": [
+        "目录写入权限"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "相机",
+            "FTP",
+            "传输时权限拒绝怎么处理"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "heldout_wording",
+      "kind": "answerable",
+      "question": "磁盘空间仍然不足怎么办",
+      "queries": [
+        [
+          "磁盘空间仍然不足怎么办"
+        ]
+      ],
+      "expected": "ops/disk.md",
+      "evidence": [
+        "仍被进程打开",
+        "文件句柄"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "磁盘空间仍然不足怎么办"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "heldout_wording",
+      "kind": "answerable",
+      "question": "公司 git 出现 TLS 证书错误怎么解决",
+      "queries": [
+        [
+          "公司",
+          "git",
+          "出现",
+          "TLS",
+          "证书错误怎么解决"
+        ]
+      ],
+      "expected": "ops/git.md",
+      "evidence": [
+        "公司根证书",
+        "sslVerify=true"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "公司",
+            "git",
+            "出现",
+            "TLS",
+            "证书错误怎么解决"
+          ],
+          "target_rank": 2,
+          "target_excerpt": true,
+          "answer_evidence": true,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "constraints",
+      "kind": "unanswerable",
+      "question": "SSH 启动程序桌面上看到",
+      "queries": [
+        [
+          "SSH",
+          "启动程序桌面上看到"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "SSH",
+            "启动程序桌面上看到"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "constraints",
+      "kind": "unanswerable",
+      "question": "SSH 启动程序桌面上看不到报销怎么处理",
+      "queries": [
+        [
+          "SSH",
+          "启动程序桌面上看不到报销怎么处理"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "SSH",
+            "启动程序桌面上看不到报销怎么处理"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "constraints",
+      "kind": "unanswerable",
+      "question": "SSH 启动程序桌面上看不到合同怎么续签",
+      "queries": [
+        [
+          "SSH",
+          "启动程序桌面上看不到合同怎么续签"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "SSH",
+            "启动程序桌面上看不到合同怎么续签"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "constraints",
+      "kind": "unanswerable",
+      "question": "新电脑私人网络提示 Access denied",
+      "queries": [
+        [
+          "新电脑私人网络提示",
+          "Access",
+          "denied"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "新电脑私人网络提示",
+            "Access",
+            "denied"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "constraints",
+      "kind": "unanswerable",
+      "question": "相机 HTTP 传输时报权限拒绝",
+      "queries": [
+        [
+          "相机",
+          "HTTP",
+          "传输时报权限拒绝"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "相机",
+            "HTTP",
+            "传输时报权限拒绝"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "constraints",
+      "kind": "unanswerable",
+      "question": "公司 git 克隆时出现 DNS 证书错误",
+      "queries": [
+        [
+          "公司",
+          "git",
+          "克隆时出现",
+          "DNS",
+          "证书错误"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "公司",
+            "git",
+            "克隆时出现",
+            "DNS",
+            "证书错误"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "constraints",
+      "kind": "unanswerable",
+      "question": "SSH 1900 启动程序桌面上看不到",
+      "queries": [
+        [
+          "SSH",
+          "1900",
+          "启动程序桌面上看不到"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "SSH",
+            "1900",
+            "启动程序桌面上看不到"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "constraints",
+      "kind": "unanswerable",
+      "question": "缓存目录清理后磁盘空间已经足够",
+      "queries": [
+        [
+          "缓存目录清理后磁盘空间已经足够"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "缓存目录清理后磁盘空间已经足够"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "constraints",
+      "kind": "unanswerable",
+      "question": "公司 git 克隆时出现 TLS 证书错误的发票怎么报销",
+      "queries": [
+        [
+          "公司",
+          "git",
+          "克隆时出现",
+          "TLS",
+          "证书错误的发票怎么报销"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "公司",
+            "git",
+            "克隆时出现",
+            "TLS",
+            "证书错误的发票怎么报销"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "constraints",
+      "kind": "unanswerable",
+      "question": "相机 FTP 传输时报权限拒绝的培训在哪里",
+      "queries": [
+        [
+          "相机",
+          "FTP",
+          "传输时报权限拒绝的培训在哪里"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "相机",
+            "FTP",
+            "传输时报权限拒绝的培训在哪里"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "scope",
+      "kind": "ambiguous",
+      "question": "换电脑了怎么接回家里的网络",
+      "queries": [
+        [
+          "换电脑了怎么接回家里的网络"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "换电脑了怎么接回家里的网络"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "scope",
+      "kind": "ambiguous",
+      "question": "那个东西连不上了",
+      "queries": [
+        [
+          "那个东西连不上了"
+        ]
+      ],
+      "attempts": [
+        {
+          "query": [
+            "那个东西连不上了"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    },
+    {
+      "split": "manual_retry",
+      "kind": "answerable",
+      "context": "在 windows-box 上通过 SSH 启动程序。",
+      "question": "为什么远程拉起的界面没有出现在屏幕上",
+      "queries": [
+        [
+          "SSH",
+          "远程拉起的界面没有出现在屏幕上"
+        ],
+        [
+          "SSH",
+          "启动程序桌面上看不到"
+        ]
+      ],
+      "expected": "ops/gui.md",
+      "evidence": [
+        "计划任务",
+        "Interactive"
+      ],
+      "attempts": [
+        {
+          "query": [
+            "SSH",
+            "远程拉起的界面没有出现在屏幕上"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        },
+        {
+          "query": [
+            "SSH",
+            "启动程序桌面上看不到"
+          ],
+          "target_rank": 0,
+          "target_excerpt": false,
+          "answer_evidence": false,
+          "routed_files": [],
+          "unexpected_routed_files": [],
+          "within_cap": true
+        }
+      ]
+    }
+  ]
+}

@@ -16,7 +16,7 @@ python3 $M brief vpn warp    # START HERE: context pack — best matching notes 
 python3 $M search nas backup  # ranked by section; glossary aliases expand terms (nas = synology = ds918 …)
 python3 $M show vpn          # a section README (or: show vpn/todo, show nas/security.md)
 python3 $M ls | todo [vpn] | log
-python3 $M sync              # pull (rebase; autostash if dirty) and push local commits
+python3 $M sync              # pull and push local commits; never stash other sessions’ edits
 python3 $M new photos "照片" "家里照片的存放和备份"   # scaffold a section, list it in README + AGENTS.md
 python3 $M lint              # README length, 更新/要点 headers, stale notes, near-duplicate articles, todo size, broken links, glossary
 python3 $M eval              # hit@1 / hit@3 of search over evals.md, glossary 见-links and article titles
@@ -37,7 +37,7 @@ python3 $M migrate [--push]                   # on the OLD computer: what is not
 ```
 
 - The notes repo is `$MEMORY_USE_DIR`, else `dir` in `~/.config/memory-use/config.json` (written by `init`), else `~/github.com/personal-memory`. `doctor` says which.
-- **Autosync never commits.** It fetches, fast-forwards (or rebases local commits and pushes), and leaves anything uncommitted alone, because it may be another session's half-finished edit. If it reports "left alone" or "needs a human", run `sync` and resolve by hand.
+- **Autosync never commits.** It fetches, fast-forwards (or rebases local commits and pushes), and leaves anything uncommitted alone, because it may be another session's half-finished edit. `save` and `sync` use the same conservative sync rules. If it reports "left alone" or "needs a human", inspect the state and resolve with the owner of those edits; repeating `sync` will not stash them.
 - **New computer:** `curl -fsSL https://raw.githubusercontent.com/leeguooooo/memory-use/main/install.sh | sh -s -- --repo <owner>/<name>` (after `gh auth login` for a private repo), then follow the notes repo's own `setup-new-computer.md` for everything else. Before leaving the old one, run `migrate`: exit 1 means something would be lost.
 - If the user asks to set up memory and has no repo, offer `init --create` (it creates a **private** GitHub repo — ask first, it is outward-facing).
 
@@ -50,9 +50,19 @@ When a hook line says `memory-use: the notes know about X` (on a user message) o
 3. A term expands through `glossary.md`, so any alias of a machine or service works. If a search misses because of a new nickname, add it to the glossary.
 4. Treat notes as leads, not truth: paths, ports and hosts may have changed. Verify on the machine before acting, and fix the note if it was wrong.
 
-Answer "我们之前怎么弄的 / how did we do X" from the repo first, quoting the file (`vpn/warp-switch.md`), before touching machines. When `brief` says `no match`, tell the user the notes don't cover it; don't fill the gap from general knowledge as if it were their setup.
+`glossary.md` can point a concept directly to an article (`- nickname / other name — see vpn/route.md`); search and brief mark these results `[glossary link]`, even if the article uses different words. A `WARN` about an overdue review or deprecated status means verify the current setup before using its instructions. Reading does not refresh the note's update date.
+
+Answer "我们之前怎么弄的 / how did we do X" from the repo first, quoting the file (`vpn/warp-switch.md`), before touching machines. `no match` means this query found nothing; it does not prove the notes lack the answer. Retry concrete words once, or clarify the machine/service when the question is ambiguous. Do not fill the gap from general knowledge as if it were their setup.
 
 When recall missed — `brief` did not surface a note that turned out to hold the answer — add the question to the notes repo's `evals.md` as `- <the words you searched> → <section>/<article>.md`, and fix the cause if it is obvious (a missing glossary alias, a vague title, a `见 article.md` pointer). `eval` then keeps that question answered as the notes grow.
+
+`brief` searches keywords. If a full sentence returns no match or only unrelated notes, retry once with 2–4 concrete topic/symptom words from the question or its established context (for example `SSH 桌面 看不到`). Inspect the returned text; a filename alone is not proof that it answers the question. If the retry still misses, report the gap. For evaluation, keep original questions and rewritten keyword queries in separate sets: `eval --cases /outside-notes/questions.md --max 1500 --json` also checks whether the final budgeted brief retains a note entry and excerpt. Do not report a successful retry as first-attempt recall.
+
+`[symptom link]` means a section README's Troubleshooting table explicitly points to that article. `trigger:` shows the routing source, not answer evidence. Read the article excerpt and check that it contains the cause/fix you need; matching a condition or a file path alone is insufficient. This is conservative literal routing, not general paraphrase understanding.
+
+Confirm that the full trigger applies, including a machine, OS or prior action omitted from the query. A retrieved condition is not proof that the user already performed that action. If the scope is uncertain, use the note as a lead and clarify before applying its instructions.
+
+When rewriting a query, keep the machine/service identifiers, negation and explicit constraints. Do not add a guessed service to resolve an ambiguous question, or replace a failure symptom with its affirmative form.
 
 ## After work (save)
 
@@ -65,6 +75,7 @@ Write back whenever the work produced something a future session needs: a new se
    - **Never write passwords, private keys, tokens, cookies** — only where they live ("in `secrets.env` on the server", `🔑 bw:<uuid>`).
    - Absolute dates (2026-09-15), never "yesterday".
    - Record **why** and **how to roll back**, not just what.
+   - Keep the source and verification date clear. Distinguish an observed result, a user-reported fact, and an unexecuted proposal; never rewrite a suggestion as an installed or verified setup.
    - Firewall / port / network changes that could lock the user out need an automatic rollback and approval first.
 3. Todos go in `<section>/todo.md` as `- [ ]`; delete the line when done (git keeps history).
 4. Article shape (what `lint` checks; Chinese or English headers both work):
@@ -81,7 +92,9 @@ Write back whenever the work produced something a future session needs: a new se
    Section READMEs stay within ~70 lines. Superseded articles move to `archive/<section>/`. New machine / service / nickname → one line in `glossary.md` (not router addresses like 192.168.1.1: every site has one).
 5. `lint` and `check`, then `save <explicit paths> -m "<section>: <what changed>" --trailer "<session attribution line, if the harness gives one>"`.
    - `save` stages only the paths you name. Never `git add -A`: other sessions work in this repo concurrently — look at `git status` and leave their files alone.
-   - It pushes only to the bound private notes repo; when it says `committed locally, not pushed: …` (wrong remote, repo public, `gh` can't see it), tell the user that line — don't push by hand around it. `--no-push` commits only.
+   - It pushes only to the bound private notes repo; when it says `committed locally, not synced: …` (wrong remote, repo public, `gh` can't see it), tell the user that line — don't push by hand around it. `--no-push` commits only.
+   - A failed sync keeps the local commit. Repeating `save` retries pending commits even without another edit; check the exit code. Divergence with uncommitted edits is left alone, and rebase conflicts are aborted. Resolve with the owner of any other session's edits before retrying.
+   - `save`, `sync`, and autosync share a checkout operation lock. Busy means failure with no entry into that transaction; retry later instead of deleting the lock file or bypassing it with Git. `--no-push` skips this command's push; later sync may push the commit.
    - It refuses to commit when the scan finds a secret. Fix the note; only mark a line `memory-use: allow` if it is a genuine false positive.
 
 ## Secrets

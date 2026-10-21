@@ -1,0 +1,43 @@
+{
+  "scope": "Authored public fixtures. No model calls, no private notes, not a blind agent benchmark.",
+  "notes": {
+    "README.md": "# Notes\n\n| Section | What |\n|---|---|\n| [Operations](ops/README.md) | Operational notes |\n",
+    "glossary.md": "# Names\n- windows-box / windows 电脑 / 台式机 — workstation\n- 相机 — camera device\n",
+    "ops/README.md": "# Operations\n\n## Troubleshooting\n\n| Symptom | Fix |\n|---|---|\n| SSH 里启动的程序在 windows-box 桌面上看不到 | [gui.md](gui.md) |\n| 新电脑连接私人网络时提示 Permission denied | [client.md](client.md) |\n| 相机 FTP 传输时报权限拒绝 | [camera.md](camera.md) |\n| 缓存目录清理后磁盘空间仍然不足 | [disk.md](disk.md) |\n| 公司 git 克隆时出现 TLS 证书错误 | [git.md](git.md) |\n| 相关机器 FTP 传输时报权限拒绝 | [other.md](other.md) |\n| 相机 HTTPS 传输时报权限拒绝 | [https.md](https.md) |\n\n## Other\nNo additional routes.\n",
+    "ops/gui.md": "# 交互式会话规则\n\n**Key points**\n- 创建计划任务，LogonType 使用 Interactive，指定已经登录桌面的账号。\n",
+    "ops/client.md": "# 客户端认证\n\n**Key points**\n- 先登记公钥，再重新加载网络客户端。\n",
+    "ops/camera.md": "# 上传目录授权\n\n**Key points**\n- 给接收账号设置目录写入权限，再重试上传。\n",
+    "ops/disk.md": "# 占用排查\n\n**Key points**\n- 检查已删除但仍被进程打开的文件，先确认所有者再关闭文件句柄。\n",
+    "ops/git.md": "# 证书信任配置\n\n**Key points**\n- 安装公司根证书，并保持 sslVerify=true。\n",
+    "ops/ssh.md": "# SSH 登录\n\n**Key points**\n- SSH 登录时检查终端密钥和 SSH 服务是否在线。\n",
+    "ops/other.md": "# 其他机器\n\n**Key points**\n- 重设其他机器的接收账号。\n",
+    "ops/https.md": "# TLS 上传服务\n\n**Key points**\n- 仅用于 TLS 上传服务，检查站点证书。\n",
+    "ops/todo.md": "# Tasks\n"
+  },
+  "cases": [
+    {"split": "development", "kind": "answerable", "question": "SSH 启动程序桌面上看不到", "queries": [["SSH", "启动程序桌面上看不到"]], "expected": "ops/gui.md", "evidence": ["计划任务", "Interactive"]},
+    {"split": "development", "kind": "answerable", "question": "新电脑私人网络提示 Permission denied", "queries": [["新电脑私人网络提示", "Permission", "denied"]], "expected": "ops/client.md", "evidence": ["登记公钥"]},
+    {"split": "development", "kind": "answerable", "question": "相机 FTP 传输权限拒绝", "queries": [["相机", "FTP", "传输权限拒绝"]], "expected": "ops/camera.md", "evidence": ["目录写入权限"]},
+    {"split": "development", "kind": "answerable", "question": "缓存清理后磁盘空间仍然不足", "queries": [["缓存清理后磁盘空间仍然不足"]], "expected": "ops/disk.md", "evidence": ["仍被进程打开", "文件句柄"]},
+    {"split": "development", "kind": "answerable", "question": "公司 git 克隆 TLS 证书错误", "queries": [["公司", "git", "克隆", "TLS", "证书错误"]], "expected": "ops/git.md", "evidence": ["公司根证书", "sslVerify=true"]},
+    {"split": "heldout_wording", "kind": "answerable", "question": "请问 SSH 启动的程序桌面看不到怎么办", "queries": [["请问", "SSH", "启动的程序桌面看不到怎么办"]], "expected": "ops/gui.md", "evidence": ["计划任务", "Interactive"]},
+    {"split": "heldout_wording", "kind": "answerable", "question": "SSH 台式机启动的程序桌面看不到", "queries": [["SSH", "台式机", "启动的程序桌面看不到"]], "expected": "ops/gui.md", "evidence": ["计划任务", "Interactive"]},
+    {"split": "heldout_wording", "kind": "answerable", "question": "新电脑连接私人网络提示 Permission denied 怎么处理", "queries": [["新电脑连接私人网络提示", "Permission", "denied", "怎么处理"]], "expected": "ops/client.md", "evidence": ["登记公钥"]},
+    {"split": "heldout_wording", "kind": "answerable", "question": "相机 FTP 传输时权限拒绝怎么处理", "queries": [["相机", "FTP", "传输时权限拒绝怎么处理"]], "expected": "ops/camera.md", "evidence": ["目录写入权限"]},
+    {"split": "heldout_wording", "kind": "answerable", "question": "磁盘空间仍然不足怎么办", "queries": [["磁盘空间仍然不足怎么办"]], "expected": "ops/disk.md", "evidence": ["仍被进程打开", "文件句柄"]},
+    {"split": "heldout_wording", "kind": "answerable", "question": "公司 git 出现 TLS 证书错误怎么解决", "queries": [["公司", "git", "出现", "TLS", "证书错误怎么解决"]], "expected": "ops/git.md", "evidence": ["公司根证书", "sslVerify=true"]},
+    {"split": "constraints", "kind": "unanswerable", "question": "SSH 启动程序桌面上看到", "queries": [["SSH", "启动程序桌面上看到"]]},
+    {"split": "constraints", "kind": "unanswerable", "question": "SSH 启动程序桌面上看不到报销怎么处理", "queries": [["SSH", "启动程序桌面上看不到报销怎么处理"]]},
+    {"split": "constraints", "kind": "unanswerable", "question": "SSH 启动程序桌面上看不到合同怎么续签", "queries": [["SSH", "启动程序桌面上看不到合同怎么续签"]]},
+    {"split": "constraints", "kind": "unanswerable", "question": "新电脑私人网络提示 Access denied", "queries": [["新电脑私人网络提示", "Access", "denied"]]},
+    {"split": "constraints", "kind": "unanswerable", "question": "相机 HTTP 传输时报权限拒绝", "queries": [["相机", "HTTP", "传输时报权限拒绝"]]},
+    {"split": "constraints", "kind": "unanswerable", "question": "公司 git 克隆时出现 DNS 证书错误", "queries": [["公司", "git", "克隆时出现", "DNS", "证书错误"]]},
+    {"split": "constraints", "kind": "unanswerable", "question": "SSH 1900 启动程序桌面上看不到", "queries": [["SSH", "1900", "启动程序桌面上看不到"]]},
+    {"split": "constraints", "kind": "unanswerable", "question": "缓存目录清理后磁盘空间已经足够", "queries": [["缓存目录清理后磁盘空间已经足够"]]},
+    {"split": "constraints", "kind": "unanswerable", "question": "公司 git 克隆时出现 TLS 证书错误的发票怎么报销", "queries": [["公司", "git", "克隆时出现", "TLS", "证书错误的发票怎么报销"]]},
+    {"split": "constraints", "kind": "unanswerable", "question": "相机 FTP 传输时报权限拒绝的培训在哪里", "queries": [["相机", "FTP", "传输时报权限拒绝的培训在哪里"]]},
+    {"split": "scope", "kind": "ambiguous", "question": "换电脑了怎么接回家里的网络", "queries": [["换电脑了怎么接回家里的网络"]]},
+    {"split": "scope", "kind": "ambiguous", "question": "那个东西连不上了", "queries": [["那个东西连不上了"]]},
+    {"split": "manual_retry", "kind": "answerable", "context": "在 windows-box 上通过 SSH 启动程序。", "question": "为什么远程拉起的界面没有出现在屏幕上", "queries": [["SSH", "远程拉起的界面没有出现在屏幕上"], ["SSH", "启动程序桌面上看不到"]], "expected": "ops/gui.md", "evidence": ["计划任务", "Interactive"]}
+  ]
+}

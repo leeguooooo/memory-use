@@ -1,0 +1,79 @@
+{
+  "source_sha256": "31b3d44f5018ede83a2ffec2f7d696b1fc96d225fd6606acdf5bf9edf3dc6838",
+  "scope": "local bare Git, synthetic public notes; no hosted service, model, or live notes",
+  "cases": [
+    {
+      "case": "test_sync_push_rejection_is_failure_and_can_retry",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-save-vE0YliL2/tests/test_memory_use.py\", line 1086, in test_sync_push_rejection_is_failure_and_can_retry\n    self.assertNotEqual(rc, 0, out)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^\nAssertionError: 0 == 0 : push failed: remote: synthetic push rejected        \nTo /tmp/memory-use-save-vE0YliL2/tmpk4at8uxl/remote.git\n ! [remote rejected] HEAD -> main (pre-receive hook declined)\nerror: failed to push some refs to '/tmp/memory-use-save-vE0YliL2/tmpk4at8uxl/remote.git'\n2bab84e note.md\n\n"
+      ]
+    },
+    {
+      "case": "test_save_retry_pushes_existing_commit_without_duplicate",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-save-vE0YliL2/tests/test_memory_use.py\", line 1108, in test_save_retry_pushes_existing_commit_without_duplicate\n    self.assertEqual(self.remote_head(self.bare), local)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 'b6f4c7df54522a8883005aa59d5f41f1f5edcecd' != 'ebd4638adc6d3e7708c55202713eef1e963c8a6a'\n- b6f4c7df54522a8883005aa59d5f41f1f5edcecd\n+ ebd4638adc6d3e7708c55202713eef1e963c8a6a\n\n"
+      ]
+    },
+    {
+      "case": "test_save_retry_still_rejects_unavailable_remote",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-save-vE0YliL2/tests/test_memory_use.py\", line 1116, in test_save_retry_still_rejects_unavailable_remote\n    self.assertNotEqual(rc, 0, out)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^\nAssertionError: 0 == 0 : nothing to commit for those paths\n\n"
+      ]
+    },
+    {
+      "case": "test_save_no_push_retry_does_not_sync_existing_commit",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_save_diverged_dirty_checkout_preserves_other_sessions_index",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-save-vE0YliL2/tests/test_memory_use.py\", line 1139, in test_save_diverged_dirty_checkout_preserves_other_sessions_index\n    self.assertNotEqual(rc, 0, out)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^\nAssertionError: 0 == 0 : pushed a7711bd note\n\n"
+      ]
+    },
+    {
+      "case": "test_sync_diverged_dirty_checkout_is_left_alone",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-save-vE0YliL2/tests/test_memory_use.py\", line 1153, in test_sync_diverged_dirty_checkout_is_left_alone\n    self.assertNotEqual(rc, 0, out)\n    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^\nAssertionError: 0 == 0 : pushed 1 local commit(s)\nf20c9d8 note.md\n\n"
+      ]
+    },
+    {
+      "case": "test_save_rebase_conflict_aborts_and_retains_local_commit",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-save-vE0YliL2/tests/test_memory_use.py\", line 1164, in test_save_rebase_conflict_aborts_and_retains_local_commit\n    self.assertEqual((self.b / \"note.md\").read_text(), \"local fact\\n\")\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '<<<<<<< HEAD\\nremote fact\\n=======\\nlocal fact\\n>>>>>>> 48ca142 (note)\\n' != 'local fact\\n'\n- <<<<<<< HEAD\n- remote fact\n- =======\n  local fact\n- >>>>>>> 48ca142 (note)\n\n"
+      ]
+    },
+    {
+      "case": "test_sync_skips_active_merge_in_linked_worktree",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-save-vE0YliL2/tests/test_memory_use.py\", line 1179, in test_sync_skips_active_merge_in_linked_worktree\n    self.assertFalse(ok, result)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^\nAssertionError: True is not false : pushed 1 (uncommitted edits present, not touched)\n"
+      ]
+    },
+    {
+      "case": "test_autosync_and_sync_use_configured_upstream_remote",
+      "passed": false,
+      "failures": [
+        "Traceback (most recent call last):\n  File \"/private/tmp/memory-use-save-vE0YliL2/tests/test_memory_use.py\", line 1194, in test_autosync_and_sync_use_configured_upstream_remote\n    self.assertTrue(ok, result)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^\nAssertionError: False is not true : fetch failed (offline?): and the repository exists.\n"
+      ]
+    }
+  ],
+  "passed": 1,
+  "total": 9,
+  "dirty_checkout_observation": {
+    "exit_code": 0,
+    "other_session_worktree_preserved": false,
+    "other_session_index_preserved": false,
+    "remote_unchanged": false,
+    "unmerged_paths": [
+      "README.md"
+    ],
+    "stash_created": true
+  }
+}

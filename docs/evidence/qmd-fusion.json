@@ -1,0 +1,27 @@
+{
+  "scope": "actual RRF function and strong-signal predicate; not the full hybrid pipeline",
+  "source_sha256": "8260c1b639b874dc3aba247e862c954e76d31c7f0363f8b84f285e40ec14cf41",
+  "original_only": [
+    {
+      "file": "exact.md",
+      "score": 0.08278688524590164
+    },
+    {
+      "file": "neighbor.md",
+      "score": 0.052258064516129035
+    }
+  ],
+  "two_expansions": [
+    {
+      "file": "neighbor.md",
+      "score": 0.11504494976203068
+    },
+    {
+      "file": "exact.md",
+      "score": 0.08278688524590164
+    }
+  ],
+  "strong_query_skips_expansion": true,
+  "explicit_intent_skips_expansion": false,
+  "ambiguous_query_skips_expansion": false
+}

@@ -1,0 +1,61 @@
+{
+  "source_sha256": "6a479d51cc975abb9272400fe7c16b2d9165793c6db87d08a6b8697b032bed11",
+  "scope": "local bare Git, synthetic public notes; no hosted service, model, or live notes",
+  "cases": [
+    {
+      "case": "test_sync_push_rejection_is_failure_and_can_retry",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_save_retry_pushes_existing_commit_without_duplicate",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_save_retry_still_rejects_unavailable_remote",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_save_no_push_retry_does_not_sync_existing_commit",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_save_diverged_dirty_checkout_preserves_other_sessions_index",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_sync_diverged_dirty_checkout_is_left_alone",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_save_rebase_conflict_aborts_and_retains_local_commit",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_sync_skips_active_merge_in_linked_worktree",
+      "passed": true,
+      "failures": []
+    },
+    {
+      "case": "test_autosync_and_sync_use_configured_upstream_remote",
+      "passed": true,
+      "failures": []
+    }
+  ],
+  "passed": 9,
+  "total": 9,
+  "dirty_checkout_observation": {
+    "exit_code": 1,
+    "other_session_worktree_preserved": true,
+    "other_session_index_preserved": true,
+    "remote_unchanged": true,
+    "unmerged_paths": [],
+    "stash_created": false
+  }
+}

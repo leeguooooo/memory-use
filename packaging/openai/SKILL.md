@@ -19,7 +19,7 @@ python3 "$M" brief vpn warp    # START HERE: best matching notes + key points, t
 python3 "$M" search nas backup # ranked by section; glossary aliases expand terms (nas = synology = ds918 …)
 python3 "$M" show vpn          # a section README (or: show vpn/todo, show nas/security.md)
 python3 "$M" ls | todo [vpn] | log
-python3 "$M" sync              # pull (rebase; autostash if dirty) and push local commits
+python3 "$M" sync              # pull and push local commits; never stash other sessions’ edits
 python3 "$M" new photos "Photos" "Where family photos live and how they are backed up"
 python3 "$M" lint              # README length, headers, stale notes, todo size, broken links
 python3 "$M" check [paths]     # secret scan
@@ -32,6 +32,8 @@ python3 "$M" save vpn/servers.md vpn/todo.md -m "vpn: …"
 - Existing repo: `python3 "$M" init --repo owner/notes --no-autosync` clones it and installs the pre-commit secret scan.
 - No repo yet: ask the user to create an empty **private** repository on their git host, then run `init --repo owner/notes --no-autosync` and add a `README.md` listing the sections they want.
 - Background sync (`autosync on`) installs a scheduled job on the user's computer. Only turn it on when the user asks.
+- `save`, `sync`, and autosync never stash another session's edits. A nonzero sync result leaves pending local commits to retry; repeating `save` retries sync even without a new edit. `--no-push` remains local. If divergence and uncommitted edits block sync, inspect with their owner before changing them.
+- These commands share a checkout operation lock. If busy, retry later; do not delete the lock file or bypass it with Git. `--no-push` skips this command's push; later sync may push the commit.
 
 ## Before work (recall)
 
@@ -40,7 +42,17 @@ python3 "$M" save vpn/servers.md vpn/todo.md -m "vpn: …"
 3. Terms expand through `glossary.md`, so any alias of a machine or service works. If a search misses because of a new nickname, add it to the glossary.
 4. Treat notes as leads, not truth: paths, ports and hosts may have changed. Verify on the machine before acting, and fix the note if it was wrong.
 
+A glossary entry can point directly to an article (`- nickname / other name — see vpn/route.md`). Search and brief mark these results `[glossary link]`, even when the article uses different words. `search`, `brief`, and `show` warn about overdue reviews and deprecated status; verify the current setup before using those instructions. The default review interval is 120 days (`Review: 30d` overrides it, `Review: never` disables age warnings). Reading does not refresh the update date.
+
 Answer "how did we do X" from the repo first, quoting the file (`vpn/warp-switch.md`), before touching machines.
+
+`brief` searches keywords. If a full sentence finds nothing or only unrelated notes, retry once with 2–4 topic/symptom words from the question or its established context (such as `SSH 桌面 看不到`). Read the result to check that it answers the question; otherwise report the gap. Evaluate original questions and keyword retries separately with `eval --cases /outside-notes/questions.md --max 1500 --json`: it measures ranking and whether a note entry and excerpt survive the final brief budget. A successful retry is not first-attempt recall.
+
+`no match` is a query failure, not proof that the whole notes repo lacks the answer. If the question's machine or service is ambiguous, clarify it. `[symptom link]` uses an authored Troubleshooting table link; its `trigger:` line is routing metadata, not answer evidence. Verify that the article excerpt contains the needed cause or fix. Literal routing does not provide general paraphrase understanding.
+
+Confirm the full trigger's machine, OS and prior-action conditions before using a remedy. Retrieval does not establish that the user performed a step mentioned only in the note; clarify uncertain scope.
+
+Keep identifiers, negation and explicit constraints when rewriting queries. Do not guess a service to resolve ambiguity or turn a failure symptom into an affirmative statement.
 
 ## After work (save)
 
@@ -51,6 +63,7 @@ Write back when the work produced something a future session needs: a new servic
    - **Never write passwords, private keys, tokens or cookies** — only where they live ("in `secrets.env` on the server").
    - Absolute dates (2026-09-15), never "yesterday".
    - Record **why** and **how to roll back**, not just what.
+   - Keep the source and verification date clear. Distinguish observed results, user-reported facts, and unexecuted proposals; a suggestion is not an installed or verified setup.
 3. Todos go in `<section>/todo.md` as `- [ ]`; delete the line when done (git keeps history).
 4. Article shape (what `lint` checks; English or Chinese headers both work):
    ```

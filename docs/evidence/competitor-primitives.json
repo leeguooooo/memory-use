@@ -1,0 +1,255 @@
+{
+  "scope": "isolated primitives; synthetic cases; not end-to-end product quality",
+  "memory_use_sha256": "1d056bf6f73eb9dace41293fffdc0f6f956f85aff01e2049da9eb507de325d99",
+  "sources_sha256": {
+    "basic.py": "eb063a3332db6d9a7bee446fd5c7e2f7973e66af8e82082b50ddf9d9a13edbb8",
+    "hindsight.py": "22df42082573eefcee8a689ceec24f2a9b1ba348267afd41104f4b9dea1ae13d"
+  },
+  "metrics": {
+    "literal": {
+      "control": {
+        "cases": 5,
+        "target_present": 5,
+        "nonempty_results": 5
+      },
+      "paraphrase": {
+        "cases": 5,
+        "target_present": 0,
+        "nonempty_results": 0
+      },
+      "unanswerable": {
+        "cases": 5,
+        "target_present": 0,
+        "nonempty_results": 0
+      }
+    },
+    "ordered_gram_channel": {
+      "control": {
+        "cases": 5,
+        "target_present": 5,
+        "nonempty_results": 5
+      },
+      "paraphrase": {
+        "cases": 5,
+        "target_present": 0,
+        "nonempty_results": 0
+      },
+      "unanswerable": {
+        "cases": 5,
+        "target_present": 0,
+        "nonempty_results": 0
+      }
+    },
+    "naive_overlap": {
+      "control": {
+        "cases": 5,
+        "target_present": 5,
+        "nonempty_results": 5
+      },
+      "paraphrase": {
+        "cases": 5,
+        "target_present": 3,
+        "nonempty_results": 3
+      },
+      "unanswerable": {
+        "cases": 5,
+        "target_present": 0,
+        "nonempty_results": 5
+      }
+    }
+  },
+  "cases": [
+    {
+      "kind": "control",
+      "query": "新电脑接入",
+      "expected": "network/device.md",
+      "literal": [
+        "network/device.md"
+      ],
+      "ordered_gram_channel": [
+        "network/device.md"
+      ],
+      "naive_overlap": [
+        "network/device.md"
+      ]
+    },
+    {
+      "kind": "control",
+      "query": "启动桌面程序",
+      "expected": "machines/desktop.md",
+      "literal": [
+        "machines/desktop.md"
+      ],
+      "ordered_gram_channel": [
+        "machines/desktop.md"
+      ],
+      "naive_overlap": [
+        "machines/desktop.md"
+      ]
+    },
+    {
+      "kind": "control",
+      "query": "磁盘空间",
+      "expected": "machines/disk.md",
+      "literal": [
+        "machines/disk.md"
+      ],
+      "ordered_gram_channel": [
+        "machines/disk.md"
+      ],
+      "naive_overlap": [
+        "machines/disk.md"
+      ]
+    },
+    {
+      "kind": "control",
+      "query": "相机上传",
+      "expected": "nas/camera.md",
+      "literal": [
+        "nas/camera.md"
+      ],
+      "ordered_gram_channel": [
+        "nas/camera.md"
+      ],
+      "naive_overlap": [
+        "nas/camera.md"
+      ]
+    },
+    {
+      "kind": "control",
+      "query": "网络安全",
+      "expected": "nas/security.md",
+      "literal": [
+        "nas/security.md"
+      ],
+      "ordered_gram_channel": [
+        "nas/security.md"
+      ],
+      "naive_overlap": [
+        "nas/security.md",
+        "network/device.md"
+      ]
+    },
+    {
+      "kind": "paraphrase",
+      "query": "换了电脑怎么接入私人网络",
+      "expected": "network/device.md",
+      "literal": [],
+      "ordered_gram_channel": [],
+      "naive_overlap": [
+        "network/device.md"
+      ]
+    },
+    {
+      "kind": "paraphrase",
+      "query": "为什么终端启动的程序没有出现在桌面",
+      "expected": "machines/desktop.md",
+      "literal": [],
+      "ordered_gram_channel": [],
+      "naive_overlap": [
+        "machines/desktop.md"
+      ]
+    },
+    {
+      "kind": "paraphrase",
+      "query": "磁盘快满了应该先清理什么",
+      "expected": "machines/disk.md",
+      "literal": [],
+      "ordered_gram_channel": [],
+      "naive_overlap": []
+    },
+    {
+      "kind": "paraphrase",
+      "query": "为什么相机传不了照片",
+      "expected": "nas/camera.md",
+      "literal": [],
+      "ordered_gram_channel": [],
+      "naive_overlap": []
+    },
+    {
+      "kind": "paraphrase",
+      "query": "外网管理入口应该怎么限制",
+      "expected": "nas/security.md",
+      "literal": [],
+      "ordered_gram_channel": [],
+      "naive_overlap": [
+        "nas/security.md"
+      ]
+    },
+    {
+      "kind": "unanswerable",
+      "query": "新电脑接入的发票怎么报销",
+      "expected": null,
+      "literal": [],
+      "ordered_gram_channel": [],
+      "naive_overlap": [
+        "network/device.md"
+      ]
+    },
+    {
+      "kind": "unanswerable",
+      "query": "桌面程序开发的合同怎么续签",
+      "expected": null,
+      "literal": [],
+      "ordered_gram_channel": [],
+      "naive_overlap": [
+        "machines/desktop.md"
+      ]
+    },
+    {
+      "kind": "unanswerable",
+      "query": "磁盘空间的采购预算怎么审批",
+      "expected": null,
+      "literal": [],
+      "ordered_gram_channel": [],
+      "naive_overlap": [
+        "machines/disk.md"
+      ]
+    },
+    {
+      "kind": "unanswerable",
+      "query": "相机上传照片的版权怎么登记",
+      "expected": null,
+      "literal": [],
+      "ordered_gram_channel": [],
+      "naive_overlap": [
+        "nas/camera.md"
+      ]
+    },
+    {
+      "kind": "unanswerable",
+      "query": "网络安全培训的费用怎么报销",
+      "expected": null,
+      "literal": [],
+      "ordered_gram_channel": [],
+      "naive_overlap": [
+        "nas/security.md"
+      ]
+    }
+  ],
+  "hindsight_budget": {
+    "skip_oversize": {
+      "selected": [
+        "short1",
+        "short2"
+      ],
+      "measured_units": 80,
+      "budget_units": 120,
+      "truncated": true
+    },
+    "all_oversize": {
+      "selected": [
+        "long"
+      ],
+      "measured_units": 1000,
+      "budget_units": 120,
+      "truncated": true
+    },
+    "zero_budget": {
+      "selected": [],
+      "measured_units": 0,
+      "budget_units": 0,
+      "truncated": true
+    }
+  }
+}
