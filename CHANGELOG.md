@@ -1,5 +1,7 @@
 # Changelog
 
+**English** | [中文](CHANGELOG.zh-CN.md)
+
 ## 0.4.1
 
 - A successful `init --no-autosync` now returns zero when autosync is intentionally disabled. Other diagnostic failures still return nonzero.
