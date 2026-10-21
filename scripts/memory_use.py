@@ -192,7 +192,7 @@ def chunks(root: Path, include_archive: bool = False) -> list[dict]:
     """Split notes into heading-scoped chunks: {file, line, path (heading trail), heading, text}."""
     out = []
     for p in md_files(root, include_archive):
-        rel = str(p.relative_to(root))
+        rel = p.relative_to(root).as_posix()
         if rel == "evals.md":
             continue    # the eval questions, word for word: ranking them would answer every case with the test itself
         trail: list[str] = []
@@ -238,7 +238,7 @@ def glossary_pointers(root: Path) -> dict[str, list[str]]:
         for target in SEE_ARTICLE.findall(desc):
             path = (root / target).resolve()
             if path.is_file() and root.resolve() in path.parents:
-                files.append(str(path.relative_to(root.resolve())))
+                files.append(path.relative_to(root.resolve()).as_posix())
         for alias in names.split(" / "):
             if files and alias.strip():
                 out.setdefault(search_text(alias.strip().strip("`")), []).extend(files)
@@ -276,10 +276,10 @@ def trouble_routes(root: Path) -> list[dict]:
                 if not target.is_file() or resolved not in target.parents:
                     continue
                 relative = target.relative_to(resolved)
-                if target.name == "README.md" or str(relative) == "evals.md" or set(relative.parts) & SKIP_DIRS:
+                if target.name == "README.md" or relative.as_posix() == "evals.md" or set(relative.parts) & SKIP_DIRS:
                     continue
-                routes.append({"condition": cells[0].replace("`", ""), "target": str(relative),
-                               "source": str(readme.relative_to(root)), "line": number})
+                routes.append({"condition": cells[0].replace("`", ""), "target": relative.as_posix(),
+                               "source": readme.relative_to(root).as_posix(), "line": number})
                 break
     return routes
 
@@ -607,7 +607,7 @@ def cmd_secret(a) -> int:
 
 def check_pointers(verbose: bool = False) -> int:
     d = need_repo()
-    refs = [(str(p.relative_to(d)), n, m.group(1)) for p in md_files(d) for n, l in enumerate(p.read_text(errors="ignore").splitlines(), 1) for m in POINTER.finditer(l)]
+    refs = [(p.relative_to(d).as_posix(), n, m.group(1)) for p in md_files(d) for n, l in enumerate(p.read_text(errors="ignore").splitlines(), 1) for m in POINTER.finditer(l)]
     if not refs:
         if verbose:
             print("no bw: pointers in notes")
@@ -1786,7 +1786,7 @@ def cmd_show(a) -> int:
         target = d / f"{a.target}.md"
     if not target.exists():
         sys.exit(f"not found: {a.target}")
-    print(f"# {target.relative_to(d)}\n")
+    print(f"# {target.relative_to(d).as_posix()}\n")
     text = target.read_text()
     warning = review_warning(text)
     if warning:
@@ -1835,7 +1835,7 @@ def eval_cases(root: Path) -> list[tuple[str, str, str, str]]:
                 cases.append(("glossary", names.split(" / ")[0].strip().strip("`"), m[1], ""))   # every alias ranks alike
     cases += [("trouble", row["condition"], row["target"], row["source"]) for row in trouble_routes(root)]
     for p in md_files(root):
-        rel = str(p.relative_to(root))
+        rel = p.relative_to(root).as_posix()
         if "/" in rel and p.name not in ("README.md", "todo.md"):
             title = next((l[2:].strip() for l in p.read_text(errors="ignore").splitlines() if l.startswith("# ")), "")
             if title:
@@ -1909,10 +1909,10 @@ def brief_files(text: str) -> set[str]:
 def evaluate_recall(root: Path, cases: list[tuple[str, str, str, str]], max_chars: int = 6000) -> dict:
     """Use the production renderer; distinguish retrieval, selection, and budget losses."""
     records = []
-    searchable = {str(p.relative_to(root)) for p in md_files(root)} - {"evals.md"}
+    searchable = {p.relative_to(root).as_posix() for p in md_files(root)} - {"evals.md"}
     for source, query, want, skip in cases:
         target = (root / want).resolve()
-        expected = str(target.relative_to(root.resolve())) if root.resolve() in target.parents else want
+        expected = target.relative_to(root.resolve()).as_posix() if root.resolve() in target.parents else want
         valid = expected in searchable and target.is_file() and root.resolve() in target.parents
         files: list[str] = []
         # Rank all chunks, then dedupe files. Twenty chunks from one long note
@@ -2220,7 +2220,7 @@ def near_duplicates(root: Path, threshold: float = 0.6) -> list[tuple[str, str, 
     the score and the stale one can win."""
     by_section: dict[str, list[tuple[str, set[str]]]] = {}
     for p in md_files(root):
-        rel = str(p.relative_to(root))
+        rel = p.relative_to(root).as_posix()
         if rel.count("/") >= 1 and p.name not in ("README.md", "todo.md"):
             toks = gist_tokens(p)
             if len(toks) >= 4:
@@ -2246,7 +2246,7 @@ def cmd_lint(a) -> int:
             if not (p / "todo.md").exists():
                 warns.append(f"{p.name}/: no todo.md")
     for p in md_files(d):
-        rel = str(p.relative_to(d))
+        rel = p.relative_to(d).as_posix()
         text = p.read_text(errors="ignore")
         lines = text.splitlines()
         is_section_readme = rel.count("/") == 1 and p.name == "README.md"

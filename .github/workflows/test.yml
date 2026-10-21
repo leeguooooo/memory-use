@@ -28,3 +28,4 @@ jobs:
           python-version: "3.13"
       - run: python -m unittest discover -s tests -p test_hook_state.py -v
       - run: python -m unittest discover -s tests -p test_context_budget.py -v
+      - run: python -m unittest discover -s tests -p test_memory_use.py -k test_eval_ -v
