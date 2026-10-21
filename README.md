@@ -11,8 +11,8 @@ Long-term memory for Claude Code and Codex, stored as Markdown in **your own pri
 | Strength | What you get |
 | --- | --- |
 | **Portable Markdown + Git** | Read and edit your notes directly, audit their history, and bring them to another agent or computer. |
-| **Traceable recall** | Ranked chunks, glossary aliases and authored troubleshooting links lead to source files and lines you can inspect. |
-| **Unicode-normalized matching** | Full-width identifiers and equivalent accent forms find the same notes without rewriting your text. |
+| **Traceable recall** | Ranked chunks, glossary aliases, Unicode normalization and authored troubleshooting links lead to source files and lines you can inspect. |
+| **Failure-aware Claude Code hooks** | Surface relevant notes before retries, then prompt the agent to save a newly learned fix at turn end; deduplicate nudges within a session. |
 | **Bounded context packs** | Fit useful excerpts, source locations and review warnings into a character budget, leaving more room for the task. |
 | **Measurable retrieval** | Test your own questions with JSON reports that distinguish ranking misses from selection and context-budget losses. |
 | **Pre-commit secret checks** | Flag common credentials and configured known secrets before committing; keep vault pointers in notes instead. |
@@ -38,6 +38,6 @@ memory-use brief vpn warp --max 1500
 memory-use save vpn/servers.md -m "vpn: update exit node"
 ```
 
-See the [user guide](docs/guide.md) for hooks, configuration, evaluation, secrets and moving to a new computer.
+See the [user guide](docs/guide.md) for commands and configuration, and [how memory works](docs/memory-lifecycle.md) for the feedback loop, implementation evidence and import gaps.
 
 [MIT](LICENSE)

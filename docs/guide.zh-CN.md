@@ -2,7 +2,7 @@
 
 [English](guide.md) | **中文**
 
-[项目介绍](../README.zh-CN.md) · [更新日志](../CHANGELOG.zh-CN.md)
+[项目介绍](../README.zh-CN.md) · [更新日志](../CHANGELOG.zh-CN.md) · [记忆机制](memory-lifecycle.zh-CN.md)
 
 ## 安装
 

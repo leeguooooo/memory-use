@@ -2,7 +2,7 @@
 
 **English** | [中文](guide.zh-CN.md)
 
-[Project overview](../README.md) · [Changelog](../CHANGELOG.md)
+[Project overview](../README.md) · [Changelog](../CHANGELOG.md) · [How memory works](memory-lifecycle.md)
 
 ## Install
 
