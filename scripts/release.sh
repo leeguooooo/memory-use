@@ -46,7 +46,11 @@ run_ok "$(workflow_run plugin-security.yml push "$SHA")"
 git tag "v$V" "$SHA"
 git push -q origin "v$V"
 if [ -n "$NOTES" ]; then
-  gh release create "v$V" --title "memory-use $V" --notes "$NOTES"
+  if [ -f "$NOTES" ]; then
+    gh release create "v$V" --title "memory-use $V" --notes-file "$NOTES"
+  else
+    gh release create "v$V" --title "memory-use $V" --notes "$NOTES"
+  fi
 else
   gh release create "v$V" --title "memory-use $V" --generate-notes
 fi

@@ -74,7 +74,7 @@ python3 scripts/research/concurrency_probe.py
 python3 scripts/research/concurrency_probe.py --module /path/to/earlier-memory_use.py
 ```
 
-前一阶段未提交源码由[并发修复还原补丁](evidence/before-concurrency.patch)保留。它从本轮源码重建 `6a479d51…`，然后可继续应用 `before-save.patch` 重建 `31b3d44f…`，再应用 `before-symptom.patch` 重建 `1d056bf6…`。每步都必须核对对应 JSON 的完整源码哈希；仅在临时目录应用。前两篇研究中的示例已更新这一顺序。
+前一阶段未提交源码由[并发修复还原补丁](evidence/before-concurrency.patch)保留。它从已提交的实验快照 [`eb8d225`](https://github.com/leeguooooo/memory-use/commit/eb8d225a0edd2ea6655a1e906489536c46098a0e) 的源码重建 `6a479d51…`，然后可继续应用 `before-save.patch` 重建 `31b3d44f…`，再应用 `before-symptom.patch` 重建 `1d056bf6…`。每步都必须核对对应 JSON 的完整源码哈希；仅在临时目录应用。前两篇研究中的示例已更新这一顺序。
 
 完整 memory-use 测试 **231 项通过**，Python 3.14.7；命令固定 Xcode 27.0 的 `DEVELOPER_DIR` 与 `SDKROOT`。[验证记录](evidence/concurrency-validation.json)包含源码、测试、探针和补丁校验值。
 

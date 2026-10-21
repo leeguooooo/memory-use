@@ -83,24 +83,25 @@ python3 scripts/research/symptom_probe.py --module /path/to/before.py --max 1500
 
 原始记录：[修改前](evidence/symptom-before.json)、[修改后](evidence/symptom-after.json)。二者使用同一语料校验值，输出还记录了模块校验值。
 
-修改前的工作区版本未单独发布，不能仅凭源码哈希下载。为保证对照可重放，保留了[召回还原补丁](evidence/before-symptom.patch)。后续同步与并发修复分别有[同步补丁](evidence/before-save.patch)和[并发补丁](evidence/before-concurrency.patch)；下面按逆序恢复召回验证时的源码，再恢复旧基线，并校验完整文件。不会修改当前工作区：
+修改前的工作区版本未单独发布，不能仅凭源码哈希下载。为保证对照可重放，保留了[召回还原补丁](evidence/before-symptom.patch)。后续同步与并发修复分别有[同步补丁](evidence/before-save.patch)和[并发补丁](evidence/before-concurrency.patch)；下面从固定 commit 的实验源码按逆序恢复召回验证时的源码，再恢复旧基线，并校验完整文件。不会修改当前工作区：
 
 ```python
 import hashlib, json, subprocess, sys, tempfile
 from pathlib import Path
+from urllib.request import urlopen
 
 repo = Path.cwd()  # 在仓库根目录运行
-source = repo / "scripts/memory_use.py"
+source_bytes = urlopen("https://raw.githubusercontent.com/leeguooooo/memory-use/eb8d225a0edd2ea6655a1e906489536c46098a0e/scripts/memory_use.py").read()
 before = json.loads((repo / "docs/evidence/symptom-before.json").read_text())
 after = json.loads((repo / "docs/evidence/symptom-after.json").read_text())
 current = json.loads((repo / "docs/evidence/sync-after.json").read_text())
 latest = json.loads((repo / "docs/evidence/concurrency-after.json").read_text())
-assert hashlib.sha256(source.read_bytes()).hexdigest() == latest["source_sha256"]
+assert hashlib.sha256(source_bytes).hexdigest() == latest["source_sha256"]
 with tempfile.TemporaryDirectory(prefix="memory-use-probe-") as temp:
     root = Path(temp)
     baseline = root / "scripts/memory_use.py"
     baseline.parent.mkdir()
-    baseline.write_bytes(source.read_bytes())
+    baseline.write_bytes(source_bytes)
     subprocess.run(["git", "-C", temp, "init", "-q"], check=True)
     subprocess.run(["git", "-C", temp, "apply", str(repo / "docs/evidence/before-concurrency.patch")], check=True)
     assert hashlib.sha256(baseline.read_bytes()).hexdigest() == current["source_sha256"]

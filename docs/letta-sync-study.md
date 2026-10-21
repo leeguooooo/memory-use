@@ -54,22 +54,23 @@ node scripts/research/letta_sync_probe.cjs /tmp/letta-memory-git.ts
 python3 scripts/research/sync_probe.py
 ```
 
-前一阶段源码未发布。[同步还原补丁](evidence/before-save.patch)从本页验证的同步修复版重建旧源码。后续加入了[并发修复](repository-concurrency-study.md)，因此当前源码须先应用[并发还原补丁](evidence/before-concurrency.patch)。每步校验完整 SHA-256，仅在临时目录中回放：
+前一阶段源码未发布。[同步还原补丁](evidence/before-save.patch)从本页验证的同步修复版重建旧源码。后续加入了[并发修复](repository-concurrency-study.md)，因此下面使用固定 commit 的实验源码，先应用[并发还原补丁](evidence/before-concurrency.patch)。每步校验完整 SHA-256，仅在临时目录中回放：
 
 ```python
 import hashlib, json, subprocess, sys, tempfile
 from pathlib import Path
+from urllib.request import urlopen
 
 repo = Path.cwd()
 before = json.loads((repo / "docs/evidence/sync-before.json").read_text())
 after = json.loads((repo / "docs/evidence/sync-after.json").read_text())
-source = repo / "scripts/memory_use.py"
+source_bytes = urlopen("https://raw.githubusercontent.com/leeguooooo/memory-use/eb8d225a0edd2ea6655a1e906489536c46098a0e/scripts/memory_use.py").read()
 current = json.loads((repo / "docs/evidence/concurrency-after.json").read_text())
-assert hashlib.sha256(source.read_bytes()).hexdigest() == current["source_sha256"]
+assert hashlib.sha256(source_bytes).hexdigest() == current["source_sha256"]
 with tempfile.TemporaryDirectory(prefix="memory-use-sync-replay-") as temp:
     baseline = Path(temp) / "scripts/memory_use.py"
     baseline.parent.mkdir()
-    baseline.write_bytes(source.read_bytes())
+    baseline.write_bytes(source_bytes)
     subprocess.run(["git", "-C", temp, "init", "-q"], check=True)
     subprocess.run(["git", "-C", temp, "apply", str(repo / "docs/evidence/before-concurrency.patch")], check=True)
     assert hashlib.sha256(baseline.read_bytes()).hexdigest() == after["source_sha256"]
