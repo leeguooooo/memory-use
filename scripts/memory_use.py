@@ -24,7 +24,7 @@ import time
 import unicodedata
 from pathlib import Path
 
-VERSION = "0.3.2"
+VERSION = "0.4.0"
 TOOL_REPO = "leeguooooo/memory-use"
 INSTALL_URL = f"https://raw.githubusercontent.com/{TOOL_REPO}/main/install.sh"
 DEFAULT_NAME = "personal-memory"
