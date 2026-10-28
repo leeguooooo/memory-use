@@ -1565,6 +1565,8 @@ def session_update():
 def not_yet_nudged(sid: str, concepts: list[str]) -> list[str]:
     """The concepts not yet pointed at in this session, recorded as pointed at now.
     MemT stores at most one experience per episode: a repeated nudge is noise, and noise costs the agent."""
+    if not concepts:
+        return []  # No match: do not wait for the session lock or touch state.
     if not sid:
         return concepts
     with session_update() as seen:

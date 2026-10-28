@@ -54,7 +54,7 @@ memory-use lessons             # 哪些笔记反复撞上命令失败、事后�
 
 AI 常常想不起先查笔记。Claude Code 插件自带四个钩子（`hooks/hooks.json`）：
 
-- **UserPromptSubmit**：你的话里提到笔记认识的东西（术语表里的任何别名，包括「windows 电脑」这种口语叫法，或者专栏名），AI 会收到一行提示：`the notes know about leo-desktop — 先 memory-use brief leo-desktop`。没提到就什么都不加；约 50 ms，纯标准库。
+- **UserPromptSubmit**：你的话里提到笔记认识的东西（术语表里的任何别名，包括「windows 电脑」这种口语叫法，或者专栏名），AI 会收到一行提示：`the notes know about leo-desktop — 先 memory-use brief leo-desktop`。没提到就什么都不加。插件通过 `scripts/prompt_hook.py` 给工作进程三秒预算；超时便终止、回收进程，安静返回成功。只有成功完成的输出才会转发。Python 启动与进程清理另有开销，宿主超时仍为五秒。
 - **PostToolUseFailure**（Bash）：命令失败了，而诊断输出或解析出的操作目标能对应已有笔记，AI 在重试之前会收到同样的提示：`that command failed and the notes know about nas — 先 memory-use brief nas`。普通 shell、路径不存在和编码错误保持安静，引用文本和无关文件参数不参与话题判断。同一条命令第三次失败、又没提到任何已知的东西时，会拿程序名和诊断词去搜全部笔记，命中一篇提到这个命令的笔记才提醒。同一个会话里每个东西、每篇笔记只提醒一次，反复重试不会刷屏。
 - **Stop**：出过上面那种失败提醒、而且之后笔记仓库没有新提交时，AI 准备结束这一轮前对同一话题、同一会话最多问一次：绕过这个失败的办法要不要写进笔记。后续同话题失败不会再次触发。其余时候不说话。（PreCompact 和 SessionEnd 的输出到不了 AI，这里是上下文被压缩掉之前最后一次能把经验记下来的机会。）
 - **SessionStart**：只有笔记仓库没接上、或自动同步卡住时才说话。
@@ -63,7 +63,7 @@ AI 常常想不起先查笔记。Claude Code 插件自带四个钩子（`hooks/h
 
 ```json
 "hooks": {
-  "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "memory-use hook prompt", "timeout": 5}]}],
+  "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 ~/.agents/skills/memory-use/scripts/prompt_hook.py", "timeout": 5}]}],
   "PostToolUseFailure": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "memory-use hook tool", "timeout": 5}]}],
   "Stop": [{"hooks": [{"type": "command", "command": "memory-use hook stop", "timeout": 5}]}],
   "SessionStart": [{"matcher": "startup", "hooks": [{"type": "command", "command": "memory-use hook session", "timeout": 5}]}]

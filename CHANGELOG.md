@@ -2,6 +2,12 @@
 
 **English** | [中文](CHANGELOG.zh-CN.md)
 
+## 0.5.2
+
+- Bound the packaged prompt hook worker to three seconds and discard incomplete output on timeout, keeping the host timeout at five seconds.
+- Skip session-state locking when the prompt contains no known topics.
+- Update the pinned setup-python and plugin-scanner actions.
+
 ## 0.5.1
 
 - Include body excerpts for title-only or filename-only matches, even without a key-points section.
