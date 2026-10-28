@@ -24,6 +24,7 @@ import tempfile
 import time
 import unicodedata
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 VERSION = "0.4.2"
 TOOL_REPO = "leeguooooo/memory-use"
@@ -1911,7 +1912,7 @@ def cmd_show(a) -> int:
         sys.exit(f"not found: {a.target}")
     print(f"# {target.relative_to(d).as_posix()}\n")
     text = target.read_text()
-    warning = review_warning(text)
+    warning = note_warning(text)
     if warning:
         print(f"WARN {warning}\n")
     print(text)
@@ -1930,7 +1931,7 @@ def cmd_search(a) -> int:
         if c.get("via_symptom"):
             route = c["via_symptom"]
             print(f"        trigger: {route['source']}:{route['line']} ‹{route['condition'][:120]}›")
-        warning = review_warning((d / c["file"]).read_text(errors="ignore"))
+        warning = note_warning((d / c["file"]).read_text(errors="ignore"))
         if warning:
             print(f"        WARN {warning}")
         for i, l in lines:
@@ -1938,7 +1939,7 @@ def cmd_search(a) -> int:
     return 0
 
 
-EVAL_LINE = re.compile(r"^\s*-\s+(.+?)\s*(?:→|->)\s*`?([\w./-]+\.md)`?\s*$")
+EVAL_LINE = re.compile(r"^\s*-\s+(.+?)\s*(?:→|->)\s*(`?[\w./-]+\.md`?(?:\s*,\s*`?[\w./-]+\.md`?)*)\s*$")
 
 
 def eval_cases(root: Path) -> list[tuple[str, str, str, str]]:
@@ -1994,6 +1995,10 @@ def cmd_eval(a) -> int:
     for source, s in report["summary"].items():
         print(f"{source:<10} {s['cases']:>5} {s['hit_at_1']:>6.0%} {s['hit_at_3']:>6.0%} "
               f"{s['mrr']:>5.2f} {s['brief_present']:>6.0%} {s['invalid']:>7}")
+    if "multi_evidence" in report:
+        m = report["multi_evidence"]
+        print(f"\nmulti-evidence ({m['cases']} valid questions): recall@3 {m['recall_at_3']:.0%}; "
+              f"brief evidence {m['brief_evidence_recall']:.0%}")
     print(f"\nbrief: expected note has a complete entry and an excerpt within {a.max} characters; not answer correctness")
     misses = [c for c in report["cases"] if c["rank"] != 1 or c["brief_status"] != "present"]
     if misses and a.misses:
@@ -2034,6 +2039,44 @@ def evaluate_recall(root: Path, cases: list[tuple[str, str, str, str]], max_char
     records = []
     searchable = {p.relative_to(root).as_posix() for p in md_files(root)} - {"evals.md"}
     for source, query, want, skip in cases:
+        # Multiple required files form one question, not multiple independent hits.
+        wants = [item.strip().strip('`') for item in want.split(',')]
+        if len(wants) > 1:
+            # All evidence shares one ranking and one actual budgeted brief.
+            files = []
+            ranked = rank(root, query.split(), top=None)
+            for _s, c, _l in ranked:
+                if c["file"] not in files and c["file"] not in ("glossary.md", skip):
+                    files.append(c["file"])
+            selected = {c["file"] for _, c, _ in brief_matches(ranked[:48])}
+            shown = brief_files(render_brief(root, query.split(), max_chars) or "")
+            evidence = []
+            seen_targets = set()
+            for item in wants:
+                target = (root / item).resolve()
+                if target in seen_targets:
+                    continue
+                seen_targets.add(target)
+                expected = target.relative_to(root.resolve()).as_posix() if root.resolve() in target.parents else item
+                valid_target = expected in searchable and target.is_file() and root.resolve() in target.parents
+                pos = files.index(expected) + 1 if valid_target and expected in files else 0
+                status = ("invalid-target" if not valid_target else "not-retrieved" if not pos else
+                          "filtered" if expected not in selected else
+                          "present" if expected in shown else "budget-or-no-excerpt")
+                evidence.append({"expected": item, "rank": pos, "brief_status": status, "valid": valid_target})
+            valid = all(item["valid"] for item in evidence)
+            ranks = [item["rank"] for item in evidence if item["rank"]]
+            present = sum(item["brief_status"] == "present" for item in evidence)
+            records.append({"source": source, "query": query, "expected": want,
+                            "rank": min(ranks, default=0),
+                            "brief_status": "invalid-target" if not valid else
+                                ("present" if present == len(evidence) else "partial"),
+                            "top": files[:3], "valid": valid,
+                            "evidence": evidence,
+                            "recall_at_3": sum(0 < item["rank"] <= 3 for item in evidence) / len(evidence),
+                            "brief_evidence_recall": present / len(evidence)})
+            continue
+        want = wants[0]
         target = (root / want).resolve()
         expected = target.relative_to(root.resolve()).as_posix() if root.resolve() in target.parents else want
         valid = expected in searchable and target.is_file() and root.resolve() in target.parents
@@ -2067,7 +2110,13 @@ def evaluate_recall(root: Path, cases: list[tuple[str, str, str, str]], max_char
                            "hit_at_3": sum(0 < c["rank"] <= 3 for c in valid) / n,
                            "mrr": sum(1 / c["rank"] for c in valid if c["rank"]) / n,
                            "brief_present": sum(c["brief_status"] == "present" for c in valid) / n}
-    return {"max_chars": max_chars, "summary": summary, "cases": records}
+    report = {"max_chars": max_chars, "summary": summary, "cases": records}
+    multi = [c for c in records if "evidence" in c and c["valid"]]
+    if multi:
+        report["multi_evidence"] = {"cases": len(multi),
+            "recall_at_3": sum(c["recall_at_3"] for c in multi) / len(multi),
+            "brief_evidence_recall": sum(c["brief_evidence_recall"] for c in multi) / len(multi)}
+    return report
 
 
 def section_of(file: str) -> str:
@@ -2253,7 +2302,7 @@ def render_brief(d: Path, topic: list[str], max_chars: int = 6000, readme_lines:
             if c.get("via_symptom"):
                 route = c["via_symptom"]
                 emit(f"    trigger: {route['source']}:{route['line']} ‹{route['condition'][:120]}›")
-            warning = review_warning((d / c["file"]).read_text(errors="ignore"))
+            warning = note_warning((d / c["file"]).read_text(errors="ignore"))
             if warning:
                 emit(f"    WARN {warning}")
             top_of_file = " › " not in c["path"] or c["line"] <= 3     # key points describe the article, not a mid-file section
@@ -2322,6 +2371,42 @@ def review_warning(text: str) -> str | None:
     return None
 
 
+CONFLICT_HEADER = re.compile(r"^>\s*(?:冲突|Conflicts)[：:]\s*(.+)$", re.I)
+
+
+def conflict_warning(text: str) -> str | None:
+    """Surface author-declared conflicts; never infer or resolve them."""
+    targets = []
+    fence = None
+    for line in text.splitlines()[:8]:
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if fence:
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not line[marker.end():].strip():
+                fence = None
+            continue
+        if marker:
+            fence = marker[1]
+            continue
+        match = CONFLICT_HEADER.match(line)
+        if not match:
+            continue
+        for target in markdown_link_targets(match[1]):
+            try:
+                url = urlsplit(target)
+            except ValueError:
+                continue
+            if not url.scheme and not url.netloc and url.path and target not in targets:
+                targets.append(target)
+    if not targets:
+        return None
+    return "declared conflict with " + ", ".join(targets[:3]) + (" and others" if len(targets) > 3 else "") + " — reconcile before relying on either"
+
+
+def note_warning(text: str) -> str | None:
+    warnings = [w for w in (review_warning(text), conflict_warning(text)) if w]
+    return "; ".join(warnings) if warnings else None
+
+
 # router-style LAN addresses (x.x.x.1 / .254) repeat at every site, so as a glossary alias they tie unrelated places together
 GATEWAY_IP = re.compile(r"(10|192\.168|172\.(1[6-9]|2\d|3[01]))(\.\d{1,3}){1,2}\.(1|254)")
 
@@ -2356,6 +2441,33 @@ def near_duplicates(root: Path, threshold: float = 0.6) -> list[tuple[str, str, 
                 if j >= threshold:
                     out.append((a, b, j))
     return out
+
+
+def markdown_link_targets(text: str):
+    """Yield simple inline destinations outside fenced and inline code.
+
+    This deliberately does not try to parse all Markdown; ambiguous destinations
+    are skipped rather than reporting example code as a broken link.
+    """
+    fence = None
+    prose = []
+    for line in text.splitlines():
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if fence:
+            if (marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence)
+                    and not line[marker.end():].strip()):
+                fence = None
+            continue
+        if marker:
+            fence = marker.group(1)
+            prose.append("")  # Code spans cannot cross a fenced block.
+            continue
+        prose.append(line)
+    # Code spans may contain newlines, but cannot cross paragraph boundaries.
+    for paragraph in re.split(r"\n\s*\n", "\n".join(prose)):
+        paragraph = re.sub(r"(`+)(?!`)(.*?)(?<!`)\1(?!`)", "", paragraph, flags=re.S)
+        for match in re.finditer(r"(?<!\\)\]\(\s*(?:<([^<>\n]+)>|([^\s()]+))(?:\s+['\"(][^\n]*?['\")])?\s*\)", paragraph):
+            yield match.group(1) or match.group(2)
 
 
 def cmd_lint(a) -> int:
@@ -2393,11 +2505,17 @@ def cmd_lint(a) -> int:
                 warns.append(f"{rel}: {n_open} open items — prioritise or split")
             if n_done > 5:
                 warns.append(f"{rel}: {n_done} done items — delete them (git history keeps them)")
-        for m in re.finditer(r"\]\(([^)#\s]+)(#[^)]*)?\)", text):
-            target = m.group(1)
-            if re.match(r"^[a-z]+://", target) or target.startswith("mailto:"):
+        conflict = conflict_warning(text)
+        if conflict:
+            warns.append(f"{rel}: {conflict}")
+        for target in markdown_link_targets(text):
+            try:
+                url = urlsplit(target)
+            except ValueError:  # Malformed URLs are outside this local-file check.
                 continue
-            if not (p.parent / target).exists():
+            if url.scheme or url.netloc or not url.path:
+                continue
+            if not (p.parent / unquote(url.path)).exists():
                 warns.append(f"{rel}: broken link → {target}")
     for x, y, j in near_duplicates(d):
         warns.append(f"{x}: title and key points {j:.0%} like {y} — merge them, or archive the older one")

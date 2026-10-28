@@ -64,6 +64,8 @@ Confirm that the full trigger applies, including a machine, OS or prior action o
 
 When rewriting a query, keep the machine/service identifiers, negation and explicit constraints. Do not add a guessed service to resolve an ambiguous question, or replace a failure symptom with its affirmative form.
 
+An explicit `> Conflicts: [other](other.md)` or `> 冲突：[other](other.md)` marks unresolved disagreement. Check both sources and their scope before acting; do not assume either wins.
+
 ## After work (save)
 
 When a Stop hook line says `a command failed on X … write it into the matching article now`, answer it before finishing: if you learned how to get past the failure and the notes don't say it, save it (symptom, cause, fix, how you verified); otherwise just finish.

@@ -9,6 +9,7 @@
 ```markdown
 - 新电脑接入 VPN 需要什么 → network/new-computer.md
 - SSH 启动程序桌面上看不到 → machines/windows.md
+- 新机器迁移需检查哪些服务 → machines/setup.md, network/services.md
 ```
 
 ```sh
@@ -17,6 +18,8 @@ memory-use eval --cases /path/outside-notes/questions.md --max 1500 --json
 ```
 
 问题文件必须在搜索范围外，或使用本来就不参与检索的根目录 `evals.md`。避免问题文本和答案路径自己进入搜索结果。`--cases` 只测指定文件；不加它则仍分别列出 `evals.md`、glossary、trouble、title 的检查。自动生成的标题和词汇表样本只能说明导航可用，不能替代用户问题。
+
+用逗号列出多个必要文件可评测多来源问题；重复路径只计一次。一个问题仍计一题：`hit@1`、`hit@3` 与 MRR 按排名最靠前的必要文件计算，`brief` 则要求所有必要文件均保留入口和正文片段。额外的 `multi-evidence` 显示逐题平均的 `recall@3`（前三个不同文件中找回的必要文件比例）和 `brief evidence`（最终 brief 保留的必要文件比例）；JSON 中每题的 `evidence` 列出各文件排名和丢失阶段。任一目标无效则整题无效，不进入指标分母。这里测的是文件和正文片段是否出现，不保证片段包含所需事实或回答正确。
 
 `hit@1`、`hit@3` 和 MRR 按去重后的文件计算，先对全部匹配片段排名，再归并文件。旧实现只取前 20 个片段，一篇长文可能占满窗口，使第二篇匹配文件被误记为“没找到”。这项评测修复本身不改变排序；下文的故障表路由是另一项检索改动。
 
@@ -143,3 +146,13 @@ with tempfile.TemporaryDirectory(prefix="memory-use-probe-") as temp:
 召回阶段工程验证：Mac 190、Python 3.14.7，216 项测试通过，包含路由边界、CLI 输出、正文证据、非法评测样例和单独运行测试模块的配置隔离检查。Windows、Linux、Python 3.9 和代理盲测尚未运行；未提交或发布。预算、并发及上游原语的前一阶段实验见[故障实验](deep-experiments.md)。
 
 后续同步修复为 225 项、并发修复为 231 项，见 [Letta 同步研究](letta-sync-study.md)和[进程并发实验](repository-concurrency-study.md)。本页的召回指标和原始校验值仍对应召回阶段快照。
+
+## 比较两个版本
+
+分别用相同笔记快照、问题文件和 `--max` 运行两个版本，将各自的 `--json` 输出保存到笔记库外，再比较逐题变化：
+
+```sh
+python3 scripts/research/compare_recall.py /tmp/recall-before.json /tmp/recall-after.json
+```
+
+工具拒绝不同预算、题目身份、重复题目或目标有效性变化，列出排名、brief 状态和证据比例发生变化的题目。它不会验证两个结果使用的是相同笔记内容或相同搜索配置；比较前须自行固定它们。JSON 包含问题和文件路径，可能涉及私人信息，保存和分享时按私人资料处理。它不测耗时，也不证明答案正确；对必要事实的检查使用上面的 `symptom_probe.py`。

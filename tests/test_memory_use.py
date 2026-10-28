@@ -207,6 +207,46 @@ class MemoryUseTest(unittest.TestCase):
         self.assertIn("no **要点**", out)
         self.assertIn("broken link → missing.md", out)
 
+    def test_declared_conflict_warns_on_recall_and_lint(self):
+        article = self.root / "nas/lucky.md"
+        article.write_text(ARTICLE_OK.replace("**要点**", "> 冲突：[office](office.md)\n\n**要点**"))
+        for args in (("show", "nas/lucky.md"), ("search", "Lucky"), ("brief", "Lucky"), ("lint", "--strict")):
+            rc, out = self.run_cmd(*args)
+            self.assertIn("declared conflict with office.md", out, (args, out))
+            if args[0] == "lint":
+                self.assertEqual(rc, 1)
+        article.write_text("```markdown\n> Conflicts: [sample](office.md)\n```\n" + ARTICLE_OK)
+        self.assertNotIn("declared conflict", self.run_cmd("show", "nas/lucky.md")[1])
+        article.write_text(ARTICLE_OK.replace("**要点**", "> Conflicts: [office](office.md)\n\n**要点**"))
+        self.assertIn("declared conflict", self.run_cmd("brief", "Lucky", "--max", "512")[1])
+
+    def test_lint_checks_local_links_but_ignores_code_examples(self):
+        (self.root / "nas/has space.md").write_text(ARTICLE_OK)
+        readme = self.root / "nas/README.md"
+        readme.write_text(readme.read_text() + '''
+[encoded](has%20space.md#section)
+[angle](<has space.md> "title")
+[external](https://example.com/a) [mail](mailto:test@example.com)
+[same page](#section)
+`[inline](inline-missing.md)`
+`multiline
+[example](multiline-missing.md)`
+````markdown
+[example](fenced-missing.md)
+```
+[still example](still-missing.md)
+````
+~~~
+[another](tilde-missing.md)
+~~~
+[bad](really-missing.md#section)
+''')
+        rc, out = self.run_cmd("lint", "--strict")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("broken link → really-missing.md#section", out)
+        for target in ("has%20space", "has space", "inline-missing", "multiline-missing", "fenced-missing", "still-missing", "tilde-missing"):
+            self.assertNotIn("broken link → " + target, out)
+
     def test_todo_lists_only_open_items(self):
         rc, out = self.run_cmd("todo")
         self.assertIn("改密码", out)

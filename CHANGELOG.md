@@ -2,6 +2,12 @@
 
 **English** | [中文](CHANGELOG.zh-CN.md)
 
+## 0.5.0
+
+- Surface explicitly declared conflicts in show, search, brief and lint, so both sources can be checked before use.
+- Evaluate multi-file evidence and compare per-question results between versions. These metrics do not prove answer correctness.
+- Avoid treating fenced and inline code examples as local links; handle percent-encoded paths.
+
 ## 0.4.2
 
 - Reject multiline input and private-key blocks before vault calls. Verify the newly created UUID and exact password readback before reporting `secret put` success; failed or uncertain writes are not replayed and values stay hidden. `--generate` uses the same verified path.

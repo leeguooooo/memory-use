@@ -34,6 +34,10 @@ memory-use eval                # how often search ranks the right note first (ev
 memory-use lessons             # notes that failed commands keep running into, and whether a fix was ever saved
 ```
 
+Declare an unresolved disagreement in the first eight lines with `> Conflicts: [other note](other.md)`. `show`, `search`, `brief` and `lint` warn until the declaration is removed after reconciliation. The tool does not decide which note is correct.
+
+`lint` checks simple inline local links for file existence, including percent-encoded paths, and skips fenced and inline code examples. Indented code blocks are not distinguished from ordinary text; anchors, reference-style links, and remote URLs are not validated.
+
 For a focused topic, `brief` keeps at most two chunks per note, drops weak matches, and includes only matching todos, summary lines, and commit subjects. A section name or its alias alone (`brief nas` / `brief pan`), or no topic, retains the section overview. `--max 1500` caps the context body including its truncation notice (minimum 128 characters). Repeating a term or its synonyms does not change its weight; `#` inside Markdown code fences is not a heading.
 
 A glossary entry such as `- broken exit / gateway-recovery — see vpn/route.md` recalls that article even when its text uses different words; results mark the entry with `[glossary link]`. `search`, `brief`, and `show` warn when a note's update date exceeds its review interval (default 120 days; `Review: 30d` overrides it, `Review: never` disables age warnings), or its status is deprecated. Reading a note does not refresh its date.

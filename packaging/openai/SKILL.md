@@ -54,6 +54,8 @@ Confirm the full trigger's machine, OS and prior-action conditions before using 
 
 Keep identifiers, negation and explicit constraints when rewriting queries. Do not guess a service to resolve ambiguity or turn a failure symptom into an affirmative statement.
 
+An explicit `> Conflicts: [other](other.md)` or `> 冲突：[other](other.md)` marks unresolved disagreement. Check both sources and their scope before acting; do not assume either wins.
+
 ## After work (save)
 
 Write back when the work produced something a future session needs: a new service, port, path, host, decision, workaround, gotcha, rollback, or todo. For infra work, offer to save it; for other topics, ask once ("Want me to add this to your notes?").
