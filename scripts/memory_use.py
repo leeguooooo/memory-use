@@ -386,8 +386,12 @@ def rank(root: Path, terms: list[str], include_archive: bool = False, top: int |
         if routed:
             c["via_symptom"] = symptoms[c["file"]]
         lines = [(i, l.strip()) for i, l in c["lines"] if any(hits(l, g) for g in groups)][:3]
-        if (linked or routed) and not lines:
-            lines = [(i, l.strip()) for i, l in c["lines"] if l.strip()][:3]
+        if not lines:
+            # A title/filename (or authored pointer) can match without the body
+            # repeating it. Return source text instead of a content-free entry.
+            lines = [(i, l.strip()) for i, l in c["lines"] if l.strip()
+                     and not KEYPOINTS.match(l.strip())
+                     and not re.match(r"^>\s*(?:更新|Updated|状态|Status|复核|Review|冲突|Conflicts)[：:]", l.strip(), re.I)][:3]
         scored.append((score, c, lines))
     scored.sort(key=lambda x: -x[0])
     return scored[:top]
@@ -1939,7 +1943,9 @@ def cmd_search(a) -> int:
     return 0
 
 
-EVAL_LINE = re.compile(r"^\s*-\s+(.+?)\s*(?:→|->)\s*(`?[\w./-]+\.md`?(?:\s*,\s*`?[\w./-]+\.md`?)*)\s*$")
+# Backticks delimit filenames containing commas; bare paths may contain spaces.
+EVAL_TARGET = r"(?:`[^`\n]+\.md`|[^`,\n]+?\.md)"
+EVAL_LINE = re.compile(rf"^\s*-\s+(.+?)\s*(?:→|->)\s*({EVAL_TARGET}(?:\s*,\s*{EVAL_TARGET})*)\s*$")
 
 
 def eval_cases(root: Path) -> list[tuple[str, str, str, str]]:
@@ -2040,7 +2046,8 @@ def evaluate_recall(root: Path, cases: list[tuple[str, str, str, str]], max_char
     searchable = {p.relative_to(root).as_posix() for p in md_files(root)} - {"evals.md"}
     for source, query, want, skip in cases:
         # Multiple required files form one question, not multiple independent hits.
-        wants = [item.strip().strip('`') for item in want.split(',')]
+        wants = ([want] if source in {"title", "glossary", "trouble"} else
+                 [item.strip().strip('`') for item in re.findall(r"`[^`]+`|[^`,]+", want) if item.strip()])
         if len(wants) > 1:
             # All evidence shares one ranking and one actual budgeted brief.
             files = []

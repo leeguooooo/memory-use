@@ -70,6 +70,19 @@ class MemoryUseTest(unittest.TestCase):
         rc, _ = self.run_cmd("search", "nomatch-zzz")
         self.assertEqual(rc, 1)
 
+    def test_title_or_filename_match_includes_body_without_keypoints(self):
+        (self.root / "nas/recovery.md").write_text(
+            "# Recovery guide\n\n> Updated: 2026-10-28 · Status: active\n\n"
+            "Restart the daemon, then verify the health endpoint.\n")
+        for query in ("Recovery guide", "recovery"):
+            rc, out = self.run_cmd("search", query)
+            self.assertEqual(rc, 0)
+            self.assertIn("Restart the daemon", out)
+            rc, out = self.run_cmd("brief", query, "--max", "512")
+            self.assertEqual(rc, 0)
+            self.assertIn("Restart the daemon", out)
+            self.assertIn("nas/recovery.md", mu.brief_files(out))
+
     def test_heading_hits_outrank_body_hits(self):
         rc, out = self.run_cmd("search", "细节")
         self.assertIn("‹", out.splitlines()[0])

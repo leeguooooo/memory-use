@@ -2,6 +2,11 @@
 
 **English** | [中文](CHANGELOG.zh-CN.md)
 
+## 0.5.1
+
+- Include body excerpts for title-only or filename-only matches, even without a key-points section.
+- Accept evaluation targets containing spaces or parentheses, and backtick-quoted filenames containing commas.
+
 ## 0.5.0
 
 - Surface explicitly declared conflicts in show, search, brief and lint, so both sources can be checked before use.
