@@ -1048,7 +1048,8 @@ def cmd_init(a) -> int:
         pass
     ensure_skill_links()
     if not a.no_autosync:
-        autosync_enable(a.every)
+        if autosync_enable(a.every) is False:
+            a.no_autosync = True
     print()
     return cmd_doctor(a)
 
@@ -1087,7 +1088,7 @@ def run_quiet(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
 
-def autosync_enable(every: int = 15) -> None:
+def autosync_enable(every: int = 15) -> bool:
     every = max(5, every)
     units = autosync_units()
     py, script = sys.executable, script_path()
@@ -1136,7 +1137,7 @@ def autosync_enable(every: int = 15) -> None:
         if r.returncode:
             sys.exit("systemctl failed: " + (r.stderr or r.stdout).strip())
         print(f"autosync: on, every {every} min (systemd --user memory-use-autosync.timer)")
-    else:
+    elif shutil.which("crontab"):
         cur = run_quiet(["crontab", "-l"]).stdout
         lines = [l for l in cur.splitlines() if "memory-use-autosync" not in l]
         STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -1145,6 +1146,11 @@ def autosync_enable(every: int = 15) -> None:
         if r.returncode:
             sys.exit("crontab failed: " + (r.stderr or r.stdout).strip())
         print(f"autosync: on, every {every} min (crontab)")
+    else:
+        print("autosync: off (no usable systemd user session or crontab; "
+              "run `memory_use.py autosync on` after installing a scheduler)")
+        return False
+    return True
 
 
 def autosync_disable() -> None:
@@ -1159,10 +1165,11 @@ def autosync_disable() -> None:
             run_quiet(["systemctl", "--user", "disable", "--now", "memory-use-autosync.timer"])
             units["systemd-timer"].unlink(missing_ok=True)
             units["systemd-service"].unlink(missing_ok=True)
-        cur = run_quiet(["crontab", "-l"])
-        if cur.returncode == 0 and "memory-use-autosync" in cur.stdout:
-            keep = [l for l in cur.stdout.splitlines() if "memory-use-autosync" not in l]
-            subprocess.run(["crontab", "-"], input="\n".join(keep) + "\n", text=True, capture_output=True)
+        if shutil.which("crontab"):
+            cur = run_quiet(["crontab", "-l"])
+            if cur.returncode == 0 and "memory-use-autosync" in cur.stdout:
+                keep = [l for l in cur.stdout.splitlines() if "memory-use-autosync" not in l]
+                subprocess.run(["crontab", "-"], input="\n".join(keep) + "\n", text=True, capture_output=True)
     print("autosync: off")
 
 
@@ -1172,7 +1179,10 @@ def autosync_installed() -> bool:
         return units["darwin"].exists()
     if sys.platform == "win32":
         return run_quiet(["schtasks", "/Query", "/TN", "memory-use-autosync"]).returncode == 0
-    return units["systemd-timer"].exists() or "memory-use-autosync" in run_quiet(["crontab", "-l"]).stdout
+    return units["systemd-timer"].exists() or (
+        shutil.which("crontab") is not None
+        and "memory-use-autosync" in run_quiet(["crontab", "-l"]).stdout
+    )
 
 
 def autosync_state() -> dict:

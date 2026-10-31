@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 _SANDBOX = tempfile.mkdtemp(prefix="memory-use-test-")
@@ -882,6 +883,41 @@ class RemindBridgeTest(MemoryUseTest):
         self.assertIn("2 open reminder(s)", out)
 
 
+class AutosyncSchedulerTest(unittest.TestCase):
+    def test_existing_crontab_is_detected(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(mu.sys, "platform", "linux"), \
+                patch.object(mu.Path, "home", return_value=Path(tmp)), \
+                patch.object(mu.shutil, "which", return_value="/usr/bin/crontab"), \
+                patch.object(mu, "run_quiet", return_value=subprocess.CompletedProcess(
+                    [], 0, "# memory-use-autosync\n", "")) as run:
+            self.assertTrue(mu.autosync_installed())
+            run.assert_called_once_with(["crontab", "-l"])
+
+    def test_missing_crontab(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(mu.sys, "platform", "linux"), \
+                patch.object(mu.Path, "home", return_value=Path(tmp)), \
+                patch.object(mu.shutil, "which", return_value=None), \
+                patch.object(mu, "run_quiet") as run, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertFalse(mu.autosync_installed())
+            self.assertFalse(mu.autosync_enable())
+            mu.autosync_disable()
+            run.assert_not_called()
+            self.assertIn("no usable systemd user session or crontab", out.getvalue())
+
+    def test_unavailable_systemd_without_crontab(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(mu.sys, "platform", "linux"), \
+                patch.object(mu.Path, "home", return_value=Path(tmp)), \
+                patch.object(mu.shutil, "which", side_effect=lambda name: "/usr/bin/systemctl" if name == "systemctl" else None), \
+                patch.object(mu, "run_quiet", return_value=subprocess.CompletedProcess([], 1, "", "no user session")) as run, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(mu.autosync_enable())
+            run.assert_called_once_with(["systemctl", "--user", "show-environment"])
+
+
 class SyncTest(unittest.TestCase):
     """init / autosync / migrate against a local bare remote, with a throwaway HOME."""
     def setUp(self):
@@ -989,6 +1025,18 @@ class SyncTest(unittest.TestCase):
         env = {**os.environ, "MEMORY_USE_SCRIPT": str(Path(mu.__file__).resolve())}
         r = subprocess.run(["git", "commit", "-qm", "leak"], cwd=target, capture_output=True, text=True, env=env)
         self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_init_without_scheduler_keeps_autosync_optional(self):
+        target = Path(self.tmp.name) / "c"
+        with patch.object(mu.sys, "platform", "linux"), \
+                patch.object(mu.shutil, "which", return_value=None), \
+                patch.object(mu, "cmd_doctor", return_value=0) as doctor, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            rc = mu.main(["init", "--repo", str(self.bare), "--dir", str(target)])
+        self.assertEqual(rc, 0)
+        self.assertTrue(doctor.call_args.args[0].no_autosync)
+        self.assertIn("autosync: off", out.getvalue())
+        self.assertTrue((target / ".git").exists())
 
     def install_plugin(self):
         f = self.home / ".claude" / "plugins" / "installed_plugins.json"
