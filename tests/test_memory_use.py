@@ -1,5 +1,6 @@
 """Run: python3 -m unittest discover -s tests"""
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -1341,6 +1342,60 @@ class ProfileLeakHookTest(unittest.TestCase):
         r = self.commit_with_leak_scan_exit(3)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("leak-scan failed (exit 3)", r.stdout + r.stderr)
+
+
+class LegacyHookRefreshTest(unittest.TestCase):
+    """Notes repos keep a copy of the hook; the #17 bug lived in that stale copy."""
+
+    LEGACY = """#!/bin/sh
+# memory-use secret scan: stale test double, swapped in via its digest
+echo "personal data from profile-use found in staged changes"
+exit 1
+"""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name) / "repo"
+        self.repo.mkdir()
+        sh("git", "init", "-q", cwd=self.repo)
+        sh("git", "config", "user.email", "t@example.com", cwd=self.repo)
+        sh("git", "config", "user.name", "t", cwd=self.repo)
+        sh("git", "config", "core.hooksPath", ".githooks", cwd=self.repo)
+        self.hook = self.repo / ".githooks" / "pre-commit"
+        self.hook.parent.mkdir()
+
+    def install(self, text):
+        self.hook.write_text(text)
+        self.hook.chmod(0o755)
+        sh("git", "add", ".githooks/pre-commit", cwd=self.repo)
+        sh("git", "commit", "-qnm", "hook", cwd=self.repo)
+
+    def test_released_legacy_hooks_are_recognized(self):
+        for rev in ("b597b86", "a338396"):
+            blob = subprocess.run(["git", "show", f"{rev}:template/.githooks/pre-commit"], cwd=mu.TOOL_ROOT, capture_output=True)
+            if blob.returncode:
+                self.skipTest("history not available")
+            self.assertIn(hashlib.sha256(blob.stdout).hexdigest(), mu.LEGACY_HOOK_SHA256)
+
+    def test_refresh_commits_tracked_hook_alone_and_unblocks_commit(self):
+        self.install(self.LEGACY)
+        (self.repo / "other.md").write_text("in progress\n")
+        digest = hashlib.sha256(self.LEGACY.encode()).hexdigest()
+        with patch.object(mu, "LEGACY_HOOK_SHA256", {digest}):
+            self.assertFalse(mu.hook_ok(self.repo)[0])
+            mu.refresh_legacy_hook(self.repo)
+            self.assertTrue(mu.hook_ok(self.repo)[0])
+        self.assertEqual(self.hook.read_text(), (mu.TOOL_ROOT / "template" / ".githooks" / "pre-commit").read_text())
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=self.repo, capture_output=True, text=True).stdout
+        self.assertEqual(status.strip(), "?? other.md")
+
+    def test_customized_hook_is_left_alone(self):
+        custom = self.LEGACY + "# mine\n"
+        self.install(custom)
+        with patch.object(mu, "LEGACY_HOOK_SHA256", {hashlib.sha256(self.LEGACY.encode()).hexdigest()}):
+            mu.refresh_legacy_hook(self.repo)
+        self.assertEqual(self.hook.read_text(), custom)
 
 
 if __name__ == "__main__":

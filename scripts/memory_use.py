@@ -12,6 +12,7 @@ import argparse
 from contextlib import contextmanager, ExitStack
 import datetime as dt
 import errno
+import hashlib
 import json
 import math
 import os
@@ -975,9 +976,39 @@ def ensure_skill_links() -> None:
 
 
 HOOK_MARKER = "memory-use secret scan"
+LEGACY_HOOK_SHA256 = {  # released template hooks that mishandle leak-scan exit 2
+    "2c5f51643f2ac29ab0bbd88837a69295dfea7d86ab2a65c3dc7b53b1d8ce2285",
+    "4cdf0d6581d444079f703a0b2e9987aaed9330e2d6e23cd3280a1282408212bc",
+}
+
+
+def active_hook(d: Path) -> Path:
+    hooks_path = git("config", "core.hooksPath", cwd=d, check=False).stdout.strip()
+    return (d / hooks_path if hooks_path else d / ".git" / "hooks") / "pre-commit"
+
+
+def hook_is_legacy(hook: Path) -> bool:
+    return hook.is_file() and hashlib.sha256(hook.read_bytes()).hexdigest() in LEGACY_HOOK_SHA256
+
+
+def refresh_legacy_hook(d: Path) -> None:
+    """Replace an unmodified old template hook; notes repos keep their own copy, so fixes never reach it otherwise."""
+    hook = active_hook(d)
+    if not hook_is_legacy(hook):
+        return
+    hook.write_text((TOOL_ROOT / "template" / ".githooks" / "pre-commit").read_text())
+    hook.chmod(0o755)
+    rel = hook.relative_to(d).as_posix()
+    if rel.startswith(".git/") or not git("ls-files", "--", rel, cwd=d).stdout.strip():
+        return
+    # Tracked copy: commit it alone, so other computers get it and the checkout stays clean for sync.
+    c = git("commit", "-q", "-m", "update secret-scan pre-commit hook", "--", rel, cwd=d, check=False)
+    if c.returncode:
+        print(f"updated {rel}, not committed: {(c.stderr or c.stdout).strip()}")
 
 
 def enable_hook(d: Path) -> str:
+    refresh_legacy_hook(d)
     if (d / ".githooks" / "pre-commit").exists():
         (d / ".githooks" / "pre-commit").chmod(0o755)
         git("config", "core.hooksPath", ".githooks", cwd=d)
@@ -993,8 +1024,9 @@ def enable_hook(d: Path) -> str:
 
 
 def hook_ok(d: Path) -> tuple[bool, str]:
-    hooks_path = git("config", "core.hooksPath", cwd=d, check=False).stdout.strip()
-    hook = (d / hooks_path if hooks_path else d / ".git" / "hooks") / "pre-commit"
+    hook = active_hook(d)
+    if hook_is_legacy(hook):
+        return False, f"secret-scan pre-commit hook: {hook.relative_to(d)} is outdated (run `memory_use.py init`)"
     good = hook.exists() and ("memory_use.py" in hook.read_text(errors="ignore") or HOOK_MARKER in hook.read_text(errors="ignore"))
     return good, f"secret-scan pre-commit hook: {hook.relative_to(d) if hook.exists() else '(none)'}"
 
@@ -2678,6 +2710,7 @@ def _save_locked(a, d: Path) -> int:
         ok, result = _autosync_locked(d)
         print(result)
         return 0 if ok else 1
+    refresh_legacy_hook(d)
     msg = a.message + (f"\n\n{a.trailer}" if a.trailer else "")
     c = git("commit", "-q", "-m", msg, "--", *a.paths, cwd=d, check=False)   # only these paths, never others' staged work
     if c.returncode:
