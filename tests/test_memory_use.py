@@ -1382,7 +1382,8 @@ exit 1
         self.install(self.LEGACY)
         (self.repo / "other.md").write_text("in progress\n")
         digest = hashlib.sha256(self.LEGACY.encode()).hexdigest()
-        with patch.object(mu, "LEGACY_HOOK_SHA256", {digest}):
+        script = {"MEMORY_USE_SCRIPT": str(Path(mu.__file__).resolve())}  # the new hook must find memory-use on CI
+        with patch.object(mu, "LEGACY_HOOK_SHA256", {digest}), patch.dict(os.environ, script):
             self.assertFalse(mu.hook_ok(self.repo)[0])
             mu.refresh_legacy_hook(self.repo)
             self.assertTrue(mu.hook_ok(self.repo)[0])
