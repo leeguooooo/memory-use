@@ -2,19 +2,24 @@ name: Release assets
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
 permissions:
   contents: write
 jobs:
   archive:
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
       GH_REPO: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
           persist-credentials: false
       - name: Verify version and build portable source archive
         run: |

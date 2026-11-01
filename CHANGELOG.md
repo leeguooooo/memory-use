@@ -2,12 +2,15 @@
 
 **English** | [中文](CHANGELOG.zh-CN.md)
 
-## 0.5.4
+## 0.5.5
 
 - Keep hooks working in non-UTF-8 locales; they previously lost nudges silently. Notes and Git output are always read as UTF-8.
 - Widen the secret scan: every non-binary file, `DB_PASSWORD=`-style names, quoted JSON keys, URL credentials, `Authorization` headers, `mysql -p`, `sshpass -p` and more vendor tokens. Saves may now stop on existing notes that were never caught before.
 - Report autosync that stopped running, autosync units pointing at missing files, and hook errors in `doctor` or at session start.
 - Allow topic nudges again after compaction, and label `brief` output as facts to verify, not instructions.
+
+## 0.5.4
+
 - Refresh the legacy pre-commit hook on `save` and `init`, so it no longer blocks saves when no profile exists.
 
 ## 0.5.3
