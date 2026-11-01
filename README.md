@@ -12,11 +12,11 @@ Long-term memory for Claude Code and Codex, stored as Markdown in **your own pri
 | --- | --- |
 | **Portable Markdown + Git** | Read and edit your notes directly, audit their history, and bring them to another agent or computer. |
 | **Traceable recall** | Ranked chunks, glossary aliases, Unicode normalization and authored troubleshooting links lead to source files and lines you can inspect. |
-| **Failure-aware Claude Code hooks** | Surface relevant notes before retries, then prompt the agent to save a newly learned fix at turn end; deduplicate nudges within a session. |
+| **Failure-aware Claude Code hooks** | Surface relevant notes before retries, then prompt the agent to save a newly learned fix at turn end; deduplicate nudges within a session, and report stalled sync or hook errors instead of failing silently. |
 | **Bounded context packs** | Fit useful excerpts, source locations and review warnings into a character budget, leaving more room for the task. |
 | **Measurable retrieval** | Test your own questions with JSON reports that distinguish ranking misses from selection and context-budget losses. |
-| **Pre-commit secret checks** | Flag common credentials and configured known secrets before committing; keep vault pointers in notes instead. |
-| **Recoverable local writes** | Commits limited to named files, checkout locks, atomic hook state updates and sync retries help concurrent sessions preserve their work. |
+| **Pre-commit secret checks** | Scan every text file for common credentials, URL and header credentials, and configured known secrets before committing; keep vault pointers in notes instead. |
+| **Recoverable local writes** | `save` commits only named files, autosync commits only edits left untouched for 2 hours, and checkout locks, atomic hook state updates and sync retries help concurrent sessions preserve their work. |
 
 ## Install
 
