@@ -27,7 +27,7 @@ import unicodedata
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-VERSION = "0.5.3"
+VERSION = "0.5.4"
 TOOL_REPO = "leeguooooo/memory-use"
 INSTALL_URL = f"https://raw.githubusercontent.com/{TOOL_REPO}/main/install.sh"
 DEFAULT_NAME = "personal-memory"
