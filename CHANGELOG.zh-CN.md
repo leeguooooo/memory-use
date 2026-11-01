@@ -8,10 +8,10 @@
 - 扩大密钥扫描：覆盖所有非二进制文件、`DB_PASSWORD=` 这类名称、带引号的 JSON 键、URL 凭据、`Authorization` 头、`mysql -p`、`sshpass -p` 和更多厂商令牌。以前没被发现的旧笔记可能会让 `save` 停下。
 - 自动同步停摆、定时任务指向的文件缺失和 hook 异常，现在会在会话开始或 `doctor` 中提示。
 - 压缩后可重新提醒同一主题；`brief` 标明内容是待核实的事实，不是指令。
+- `save` 和 `init` 会刷新旧版 pre-commit hook，没有 profile 时不再阻止保存。
 
 ## 0.5.3
 
-- `save` 和 `init` 会刷新旧版 pre-commit hook。
 - 没有 `crontab` 时 `init` 不再崩溃。
 
 ## 0.5.2

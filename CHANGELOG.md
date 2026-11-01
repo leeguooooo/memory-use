@@ -8,10 +8,10 @@
 - Widen the secret scan: every non-binary file, `DB_PASSWORD=`-style names, quoted JSON keys, URL credentials, `Authorization` headers, `mysql -p`, `sshpass -p` and more vendor tokens. Saves may now stop on existing notes that were never caught before.
 - Report autosync that stopped running, autosync units pointing at missing files, and hook errors in `doctor` or at session start.
 - Allow topic nudges again after compaction, and label `brief` output as facts to verify, not instructions.
+- Refresh the legacy pre-commit hook on `save` and `init`, so it no longer blocks saves when no profile exists.
 
 ## 0.5.3
 
-- Refresh the legacy pre-release pre-commit hook on `save` and `init`.
 - Stop `init` crashing when `crontab` is missing.
 
 ## 0.5.2
