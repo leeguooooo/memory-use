@@ -1107,6 +1107,7 @@ def cmd_clone(a) -> int:
 
 AUTOSYNC_LABEL = "com.github.memory-use.autosync"
 STATE_FILE = STATE_DIR / "autosync.json"
+AUTOSYNC_SETTLE_SECONDS = 2 * 3600   # younger edits may be another session's work in progress
 AUTOSYNC_STALE_HOURS = 24   # long enough for a closed laptop lid; `every` itself is only minutes
 
 
@@ -1262,11 +1263,29 @@ def autosync_once(d: Path) -> tuple[bool, str]:
         return False, "skipped: another memory-use operation owns this checkout; retry later"
 
 
+def commit_settled_edits(d: Path) -> str | None:
+    """Commit the whole worktree once every change has sat untouched long enough; returns a blocking problem."""
+    listed = git("diff", "--name-only", "-z", "HEAD", cwd=d).stdout + "\0" + git(
+        "ls-files", "-o", "--exclude-standard", "-z", cwd=d).stdout
+    paths = [d / name for name in listed.split("\0") if name]
+    existing = [p for p in paths if p.exists()]
+    if not paths or any(time.time() - p.stat().st_mtime < AUTOSYNC_SETTLE_SECONDS for p in existing):
+        return None
+    if scan_paths(existing):
+        return "settled edits look like secrets; left uncommitted (`memory-use check`)"
+    git("add", "-A", cwd=d)
+    c = git("commit", "-q", "-m", f"autosync: 提交静置的 {len(paths)} 个文件", cwd=d, check=False)
+    return f"auto-commit failed: {(c.stderr or c.stdout).strip()}" if c.returncode else None
+
+
 def _autosync_locked(d: Path) -> tuple[bool, str]:
-    """fetch; fast-forward or rebase onto upstream; push local commits. Never commits, never stashes,
-    never touches a repo mid-rebase/merge. Uncommitted edits (maybe another session's) are left alone."""
+    """Commit edits once settled; fetch; fast-forward or rebase onto upstream; push. Never stashes, never touches
+    a repo mid-rebase/merge. Recent edits (maybe another session's) are left alone."""
     if repository_operation_in_progress(d):
         return False, "skipped: a rebase/merge is in progress"
+    problem = commit_settled_edits(d)
+    if problem:
+        return False, problem
     if git("rev-parse", "--abbrev-ref", "@{u}", cwd=d, check=False).returncode:
         return False, "skipped: current branch has no upstream"
     branch = git("symbolic-ref", "--short", "HEAD", cwd=d).stdout.strip()

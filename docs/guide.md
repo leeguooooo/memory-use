@@ -75,7 +75,7 @@ Installed with `install.sh` instead of the plugin? Add the same to `~/.claude/se
 `memory-use autosync on` (default after `init`) runs every 15 minutes via launchd (macOS), a systemd user timer or cron (Linux), or Task Scheduler (Windows):
 
 - fetch, then fast-forward, or rebase local commits onto the remote and push;
-- **never commits for you** and never stashes: an uncommitted edit may be another agent session's half-written note, so it is left alone;
+- commits only when every change has sat untouched for 2 hours and passes the secret scan, and never stashes: a newer edit may be another agent session's half-written note, so it is left alone;
 - a conflict aborts cleanly and is reported by `doctor` and `autosync status` for a human to resolve.
 
 Agents commit with `save`, which names its files explicitly, so parallel sessions never sweep up each other's work.

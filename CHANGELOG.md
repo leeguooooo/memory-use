@@ -2,6 +2,10 @@
 
 **English** | [中文](CHANGELOG.zh-CN.md)
 
+## 0.5.6
+
+- Autosync now commits edits that have sat untouched for 2 hours and pass the secret scan, so finished notes no longer stay uncommitted.
+
 ## 0.5.5
 
 - Keep hooks working in non-UTF-8 locales; they previously lost nudges silently. Notes and Git output are always read as UTF-8.

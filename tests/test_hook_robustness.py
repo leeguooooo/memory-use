@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -65,6 +66,37 @@ class HookRobustnessTest(unittest.TestCase):
         unit.write_text(f"<string>/gone/bin/python3.14</string><string>{script}</string>", encoding="utf-8")
         with mock.patch.object(mu, "autosync_units", return_value={"darwin": unit, "systemd-service": unit}):
             self.assertEqual(mu.autosync_missing_paths(), ["/gone/bin/python3.14"])
+
+
+class AutosyncCommitTest(unittest.TestCase):
+    def repo(self, text):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        d = Path(temp.name)
+        for args in (["init", "-q"], ["config", "user.name", "t"], ["config", "user.email", "t@example.com"],
+                     ["commit", "-q", "--allow-empty", "-m", "base"]):
+            mu.git(*args, cwd=d)
+        (d / "note.md").write_text(text, encoding="utf-8")
+        return d
+
+    def age(self, d, seconds):
+        old = time.time() - seconds
+        os.utime(d / "note.md", (old, old))
+
+    def test_settled_edit_is_committed_and_recent_edit_is_not(self):
+        d = self.repo("hello\n")
+        self.assertIsNone(mu.commit_settled_edits(d))
+        self.assertTrue(mu.git("status", "--porcelain", cwd=d).stdout)
+        self.age(d, mu.AUTOSYNC_SETTLE_SECONDS + 60)
+        self.assertIsNone(mu.commit_settled_edits(d))
+        self.assertEqual(mu.git("status", "--porcelain", cwd=d).stdout, "")
+        self.assertIn("note.md", mu.git("show", "--name-only", cwd=d).stdout)
+
+    def test_settled_secret_is_never_committed(self):
+        d = self.repo("password=hunter2hunter2\n")
+        self.age(d, mu.AUTOSYNC_SETTLE_SECONDS + 60)
+        self.assertIn("secrets", mu.commit_settled_edits(d))
+        self.assertTrue(mu.git("status", "--porcelain", cwd=d).stdout)
 
 
 class SecretScanTest(unittest.TestCase):

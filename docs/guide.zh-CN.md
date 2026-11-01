@@ -75,7 +75,7 @@ AI 常常想不起先查笔记。Claude Code 插件自带四个钩子（`hooks/h
 `memory-use autosync on`（`init` 默认打开）每 15 分钟跑一次：macOS 用 launchd，Linux 用 systemd 用户定时器或 cron，Windows 用任务计划程序。
 
 - 先 fetch，能快进就快进；本地有提交就 rebase 到远端再 push；
-- **从不替你提交**，也不 stash：没提交的改动可能是另一个 AI 会话写到一半的笔记，原样不动；
+- 所有改动静置满 2 小时且通过密钥扫描才自动提交，也不 stash：更新的改动可能是另一个 AI 会话写到一半的笔记，原样不动；
 - 有冲突就干净地放弃，`doctor` 和 `autosync status` 里能看到，留给人处理。
 
 AI 用 `save` 提交，必须写明文件，所以同时开的几个会话不会把彼此的改动一起提交。
