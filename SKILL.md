@@ -37,7 +37,7 @@ python3 $M migrate [--push]                   # on the OLD computer: what is not
 ```
 
 - The notes repo is `$MEMORY_USE_DIR`, else `dir` in `~/.config/memory-use/config.json` (written by `init`), else `~/github.com/personal-memory`. `doctor` says which.
-- **Autosync never commits.** It fetches, fast-forwards (or rebases local commits and pushes), and leaves anything uncommitted alone, because it may be another session's half-finished edit. `save` and `sync` use the same conservative sync rules. If it reports "left alone" or "needs a human", inspect the state and resolve with the owner of those edits; repeating `sync` will not stash them.
+- **Autosync commits only settled edits.** Once every change in the checkout has sat untouched for 2 hours and passes the secret scan, it commits them, then fetches, fast-forwards (or rebases local commits) and pushes. Newer edits may be another session's half-finished work, so they are left alone. `save` and `sync` use the same conservative sync rules. If it reports "left alone" or "needs a human", inspect the state and resolve with the owner of those edits; repeating `sync` will not stash them.
 - **New computer:** `curl -fsSL https://raw.githubusercontent.com/leeguooooo/memory-use/main/install.sh | sh -s -- --repo <owner>/<name>` (after `gh auth login` for a private repo), then follow the notes repo's own `setup-new-computer.md` for everything else. Before leaving the old one, run `migrate`: exit 1 means something would be lost.
 - If the user asks to set up memory and has no repo, offer `init --create` (it creates a **private** GitHub repo — ask first, it is outward-facing).
 

@@ -14,7 +14,7 @@ curl -fsSL {{INSTALL_URL}} | sh -s -- --repo {{REPO}}
 ```
 
 That clones `{{REPO}}`, links the memory-use skill for Claude Code / Codex, enables the pre-commit
-secret scan, and turns on autosync (pull + push every 15 minutes; it never commits for you).
+secret scan, and turns on autosync (pull + push every 15 minutes; it commits only edits left untouched for 2 hours).
 Check with `memory_use.py doctor`.
 
 ## 2. Everything else
