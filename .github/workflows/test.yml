@@ -32,3 +32,4 @@ jobs:
       - run: python -m unittest discover -s tests -p test_secret_put.py -v
       - run: python -m unittest discover -s tests -p test_failure_relevance.py -v
       - run: python -m unittest discover -s tests -p test_prompt_hook.py -v
+      - run: python -m unittest discover -s tests -p test_hook_robustness.py -v

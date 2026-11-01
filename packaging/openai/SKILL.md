@@ -81,7 +81,7 @@ Write back when the work produced something a future session needs: a new servic
 
 ## Secret scan
 
-`check` flags private keys, common API tokens, JWTs, SSH key blobs, and password assignments in English or Chinese (`password=…`, `密码：…`); pointers, paths and prose pass. Values listed one per line in `~/.config/memory-use/known-secrets` (outside git, chmod 600) are caught verbatim. The pre-commit hook installed by `init` blocks any commit that fails the scan, even one made with plain git.
+`check` scans every non-binary file for private keys, common API tokens, JWTs, SSH key blobs, credentials in URLs, `Authorization` headers, `mysql -p` / `sshpass -p`, and password assignments in English or Chinese (`password=…`, `密码：…`); pointers, paths and prose pass. Values listed one per line in `~/.config/memory-use/known-secrets` (outside git, chmod 600) are caught verbatim. The pre-commit hook installed by `init` blocks any commit that fails the scan, even one made with plain git.
 
 ## Limits
 

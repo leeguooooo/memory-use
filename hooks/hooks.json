@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/prompt_hook.py\"",
+            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 PYTHONUTF8=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/prompt_hook.py\"",
             "timeout": 5
           }
         ]
@@ -17,7 +17,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/memory_use.py\" hook session",
+            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 PYTHONUTF8=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/memory_use.py\" hook session",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 PYTHONUTF8=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/memory_use.py\" hook compact",
             "timeout": 5
           }
         ]
@@ -29,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/memory_use.py\" hook tool",
+            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 PYTHONUTF8=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/memory_use.py\" hook tool",
             "timeout": 5
           }
         ]
@@ -40,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/memory_use.py\" hook stop",
+            "command": "MEMORY_USE_NO_UPDATE_CHECK=1 PYTHONUTF8=1 python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/memory_use.py\" hook stop",
             "timeout": 5
           }
         ]
