@@ -99,7 +99,7 @@ memory-use migrate --push   # 先推上去
 
 ## 密钥
 
-提交前钩子（以及 `save`、`check`）会拒绝看起来像密钥的内容：私钥，GitHub / OpenAI / Anthropic / AWS / Slack 令牌，JWT，还有中英文的赋值写法（`password: …`、`密码：…`、`路由器密码是 …`）。指针和说明文字能通过（`🔑 bw:<uuid>`、`~/.ssh/id_ed25519`、`在 secrets.env 里`）。配合 [bitwarden-use](https://github.com/leeguooooo/bitwarden-use)，`memory-use secret put` 接收单行密码，核对新条目和回读内容后才打印指针；多行内容和私钥块应使用原生 `bwu item put` JSON，`secret hashes` 让钩子按哈希拦下密码库 `memory` 文件夹里的任何密码。装了 [profile-use](https://github.com/leeguooooo/profile-use) 时，钩子还会拦个人资料。
+提交前钩子（以及 `save`、`check`）会拒绝看起来像密钥的内容：私钥，常见厂商令牌，JWT，URL 里的凭据，`Authorization` 头，`mysql -p` 和 `sshpass -p`，还有中英文的赋值写法（`password: …`、`密码：…`、`路由器密码是 …`）。指针和说明文字能通过（`🔑 bw:<uuid>`、`~/.ssh/id_ed25519`、`在 secrets.env 里`）。配合 [bitwarden-use](https://github.com/leeguooooo/bitwarden-use)，`memory-use secret put` 接收单行密码，核对新条目和回读内容后才打印指针；多行内容和私钥块应使用原生 `bwu item put` JSON，`secret hashes` 让钩子按哈希拦下密码库 `memory` 文件夹里的任何密码。装了 [profile-use](https://github.com/leeguooooo/profile-use) 时，钩子还会拦个人资料。
 
 ## 配置
 

@@ -22,6 +22,7 @@ def run_prompt_hook(command, payload, timeout=PROMPT_TIMEOUT):
 def main():
     # Skip the release check even when called outside the packaged hook command.
     os.environ["MEMORY_USE_NO_UPDATE_CHECK"] = "1"
+    os.environ["PYTHONUTF8"] = "1"
     command = [sys.executable, str(Path(__file__).with_name("memory_use.py")), "hook", "prompt"]
     sys.stdout.buffer.write(run_prompt_hook(command, sys.stdin.buffer.read()))
     return 0

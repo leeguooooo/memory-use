@@ -99,7 +99,7 @@ It also lists what stays behind by design (the local known-secrets list, the age
 
 ## Secrets
 
-The pre-commit hook (and `save`, and `check`) refuses anything that looks like a secret: private keys, GitHub / OpenAI / Anthropic / AWS / Slack tokens, JWTs, and assignments in English or Chinese (`password: …`, `密码：…`, `路由器密码是 …`). Pointers and prose pass (`🔑 bw:<uuid>`, `~/.ssh/id_ed25519`, `in secrets.env`). With [bitwarden-use](https://github.com/leeguooooo/bitwarden-use), `memory-use secret put` accepts single-line passwords and prints a pointer only after verifying the new item and exact readback; multiline secrets and private-key blocks need native `bwu item put` JSON, and `secret hashes` makes the hook catch any password from your vault's `memory` folder by hash. When [profile-use](https://github.com/leeguooooo/profile-use) is installed the hook also blocks your personal data.
+The pre-commit hook (and `save`, and `check`) refuses anything that looks like a secret: private keys, common vendor tokens, JWTs, credentials in URLs, `Authorization` headers, `mysql -p` / `sshpass -p`, and assignments in English or Chinese (`password: …`, `密码：…`, `路由器密码是 …`). Pointers and prose pass (`🔑 bw:<uuid>`, `~/.ssh/id_ed25519`, `in secrets.env`). With [bitwarden-use](https://github.com/leeguooooo/bitwarden-use), `memory-use secret put` accepts single-line passwords and prints a pointer only after verifying the new item and exact readback; multiline secrets and private-key blocks need native `bwu item put` JSON, and `secret hashes` makes the hook catch any password from your vault's `memory` folder by hash. When [profile-use](https://github.com/leeguooooo/profile-use) is installed the hook also blocks your personal data.
 
 ## Configuration
 
