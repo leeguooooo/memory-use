@@ -581,6 +581,18 @@ def op(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run([b, *args], input=stdin, text=True, capture_output=True)
 
 
+def op_failure(what: str, r: subprocess.CompletedProcess) -> str:
+    """A fixed message for a failed op call: its own output is never passed on, in case it echoes a value."""
+    err = (r.stderr or "").lower()
+    why = next((msg for keys, msg in (
+        (("authorization prompt dismissed", "authorization timeout"), "the 1Password approval prompt was dismissed or timed out — approve it on this Mac"),
+        (("not signed in", "no accounts configured", "not currently signed in"), "op is not signed in — unlock 1Password (app integration) or set a service-account token"),
+        (("couldn't connect to the 1password desktop app",), "the 1Password app is not running"),
+        (("more than one item matches",), "several items match — use the item id from `secret find`"),
+        (("isn't an item", "not found", "isn't a vault"), "no such item or vault — check with `secret find`")) if any(k in err for k in keys)), "output hidden")
+    return f"{what} failed: {why}"
+
+
 def op_signed_in() -> bool:
     """`op whoami` does not prompt: with app integration it fails until the user has authorized this session."""
     return bool(op_bin()) and op("whoami").returncode == 0
@@ -606,11 +618,11 @@ def op_items() -> list[dict]:
     """Metadata only (id, name, user, vault, tags, type) — never values."""
     r = op("item", "list", "--format", "json")
     if r.returncode:
-        sys.exit("op item list failed: " + r.stderr.strip())
+        sys.exit(op_failure("op item list", r))
     out = []
     for i in json.loads(r.stdout or "[]"):
         v = i.get("vault") or {}
-        out.append({"id": i.get("id"), "name": i.get("title"), "type": i.get("category"), "tags": i.get("tags") or [],
+        out.append({"id": i.get("id"), "name": i.get("title"), "type": i.get("category"), "tags": i.get("tags") or [], "vault_id": v.get("id"),
                     # additional_information is the username only for logins; elsewhere it can be a note excerpt
                     "user": (i.get("additional_information") or None) if i.get("category") == "LOGIN" else None,
                     "vault": v.get("name") if re.fullmatch(OP_VAULT_CHARS, v.get("name") or "") else v.get("id")})
@@ -624,18 +636,24 @@ def op_pointer(item: dict) -> str:
 def op_item(ref: str, vault: str | None = None) -> dict:
     r = op("item", "get", ref, "--reveal", "--format", "json", *(["--vault", vault] if vault else []))
     if r.returncode:
-        sys.exit("op item get failed: " + r.stderr.strip())
+        sys.exit(op_failure("op item get", r))
     return json.loads(r.stdout)
 
 
 def op_field(item: dict, name: str) -> str:
     """`name` as with bitwarden-use: password, username, notes, totp, custom:<label>, or a field label / id."""
-    want = (name[len("custom:"):] if name.startswith("custom:") else name).lower()
+    custom = name.startswith("custom:")
+    want = (name[len("custom:"):] if custom else name).lower()
     fields = item.get("fields") or []
-    purpose = {"password": "PASSWORD", "username": "USERNAME", "notes": "NOTES"}.get(want)
-    hit = next((f for f in fields if want in ("totp", "otp") and f.get("type") == "OTP"), None) \
+    labelled = [f for f in fields if want in ((f.get("id") or "").lower(), (f.get("label") or "").lower())]
+    if custom:   # only a field of that label / id, never the built-in password, username or one-time code
+        labelled = [f for f in labelled if not f.get("purpose") and f.get("type") != "OTP"]
+        if len(labelled) > 1:
+            sys.exit(f"{len(labelled)} fields are labelled {want!r} in that item; use the field id")
+    purpose = None if custom else {"password": "PASSWORD", "username": "USERNAME", "notes": "NOTES"}.get(want)
+    hit = next((f for f in fields if not custom and want in ("totp", "otp") and f.get("type") == "OTP"), None) \
         or next((f for f in fields if purpose and f.get("purpose") == purpose), None) \
-        or next((f for f in fields if want in ((f.get("id") or "").lower(), (f.get("label") or "").lower())), None)
+        or next(iter(labelled), None)
     if not hit:
         sys.exit(f"no field {name!r} in that item; fields: " + ", ".join(f.get("label") or f.get("id") or "?" for f in fields))
     return (hit.get("totp") if hit.get("type") == "OTP" else hit.get("value")) or ""
@@ -704,19 +722,24 @@ def op_put(name: str, user: str | None, value: str) -> str:
     # The value travels in the JSON template on stdin, never in argv; op's output (it echoes fields) is discarded.
     r = op("item", "create", "--format", "json", "--tags", secret_tag(), *(["--vault", vault] if vault else []), "-",
            stdin=json.dumps(template))
-    if r.returncode:
+    try:
+        created = json.loads(r.stdout).get("id") if not r.returncode else None
+    except ValueError:
+        created = None
+    if not created:
         sys.exit(PUT_UNCERTAIN)
     try:
         after = op_items()
     except SystemExit:
         sys.exit(PUT_UNCERTAIN)
     new = [i for i in after if i["id"] not in before and i.get("name") == name and has_secret_tag(i)
-           and (user is None or i.get("user") == user)]
-    if len(new) != 1:
+           and (user is None or i.get("user") == user) and (vault is None or vault in (i.get("vault"), i.get("vault_id")))]
+    # exactly one new matching item, and it is the one op says it created
+    if len(new) != 1 or new[0]["id"] != created:
         sys.exit(PUT_UNCERTAIN)
     import hmac
     try:
-        actual = op_field(op_item(new[0]["id"]), "password")
+        actual = op_field(op_item(created, new[0]["vault_id"]), "password")
     except SystemExit:
         sys.exit(PUT_UNCERTAIN)
     if not hmac.compare_digest(actual.encode(), value.encode()):
@@ -736,7 +759,7 @@ def secret_value(ref: str, field: str | None) -> str:
     if ref.startswith("bw:") or secret_backend() == "bitwarden":
         r = bwu("get", ref[3:] if ref.startswith("bw:") else ref, "--field", field or "password", "--reveal")
         if r.returncode:
-            sys.exit("bitwarden-use get failed: " + (r.stderr.strip() or r.stdout.strip()))
+            sys.exit("bitwarden-use get failed (output hidden): check the pointer with `secret find`, or unlock the vault")
         return r.stdout.rstrip("\n")
     return op_field(op_item(ref), field or "password")
 
@@ -830,7 +853,7 @@ def check_pointers(verbose: bool = False) -> int:
     for p in md_files(d):
         for n, l in enumerate(p.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
             refs["bw"] += [(p.relative_to(d).as_posix(), n, m.group(1)) for m in BW_POINTER.finditer(l)]
-            refs["op"] += [(p.relative_to(d).as_posix(), n, m.group(2)) for m in OP_POINTER.finditer(l)]
+            refs["op"] += [(p.relative_to(d).as_posix(), n, f"{m.group(1)}/{m.group(2)}") for m in OP_POINTER.finditer(l)]
     if not refs["bw"] and not refs["op"]:
         if verbose:
             print("no password-manager pointers in notes")
@@ -843,10 +866,12 @@ def check_pointers(verbose: bool = False) -> int:
             if verbose:
                 print(f"{len(refs[kind])} {kind} pointer(s) not checked — {label} is locked or not signed in (unlock it to verify)")
             continue
-        ids = {i["id"] for i in items()}
+        # an op pointer must name the item's vault too (by name or id), or `secret get` cannot follow it
+        ids = {i["id"] for i in items()} if kind == "bw" else \
+            {f"{v}/{i['id']}" for i in items() for v in (i.get("vault"), i.get("vault_id")) if v}
         missing = [(f, n, u) for f, n, u in refs[kind] if u not in ids]
         for f, n, u in missing:
-            print(f"WARN {f}:{n}: {kind}:{u} not found in {label}")
+            print(f"WARN {f}:{n}: {'bw:' if kind == 'bw' else 'op://'}{u} not found in {label}")
         if verbose and not missing:
             print(f"{len(refs[kind])} {kind} pointer(s) OK")
         bad += len(missing)

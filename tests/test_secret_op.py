@@ -84,6 +84,38 @@ class OnePasswordBackendTest(MemoryUseTest):
                 self.assertEqual(marker.read_text(), want)
                 self.assertNoValues(out)
 
+    def test_failed_reads_never_pass_backend_output_on(self):
+        os.environ["FAKE_OP_MODE"] = "leaky-error"
+        rc, out = self.run_cmd("secret", "get", f"op://Private/{ROUTER}", "--print")
+        self.assertNotEqual(rc, 0)
+        self.assertNoValues(str(rc) + out)
+        self.assertIn("output hidden", str(rc))
+        leaky = mu.subprocess.CompletedProcess([], 1, "s3cret-bw-pw\n", "")
+        with mock.patch.object(mu, "bwu", return_value=leaky):
+            rc, out = self.run_cmd("secret", "get", "bw:11111111-2222-3333-4444-555555555555", "--print")
+        self.assertNotEqual(rc, 0)
+        self.assertNoValues(str(rc) + out)
+
+    def test_custom_prefix_skips_builtin_fields(self):
+        items = json.loads(self.state.read_text())
+        items[0]["fields"].append({"id": "c1", "type": "CONCEALED", "label": "password", "value": "s3cret-custom"})
+        self.state.write_text(json.dumps(items))
+        marker = Path(self.tmp.name) / "seen"
+        for field, want in [("password", "s3cret-router-pw"), ("custom:password", "s3cret-custom")]:
+            rc, out = self.run_cmd("secret", "get", ROUTER, "--field", field, "--env", "PW", "--",
+                                   "/bin/sh", "-c", f'printf %s "$PW" > {marker}')
+            self.assertEqual(rc, 0, out)
+            self.assertEqual(marker.read_text(), want)
+        rc, _ = self.run_cmd("secret", "get", ROUTER, "--field", "custom:totp", "--print")
+        self.assertNotEqual(rc, 0)
+
+    def test_refs_require_the_items_vault(self):
+        (self.root / "nas" / "p.md").write_text(ARTICLE_OK + f"\n🔑 op://vprivate/{ROUTER}\n🔑 op://Other/{ROUTER}\n")
+        rc, out = self.run_cmd("secret", "refs")
+        self.assertEqual(rc, 1)
+        self.assertIn(f"p.md:13: op://Other/{ROUTER} not found", out)
+        self.assertNotIn("p.md:12", out)
+
     def test_get_bw_pointer_still_goes_to_bitwarden(self):
         with mock.patch.object(mu, "bwu", return_value=mu.subprocess.CompletedProcess([], 0, "bw-value\n", "")) as bw:
             marker = Path(self.tmp.name) / "seen"
@@ -106,7 +138,8 @@ class OnePasswordBackendTest(MemoryUseTest):
         self.assertIn("--reveal", self.calls()[-1]["argv"])
 
     def test_put_unverified_outcomes_report_no_pointer(self):
-        for mode in ["mismatch", "duplicate", "create-failed"]:
+        os.environ["MEMORY_USE_OP_VAULT"] = "Private"
+        for mode in ["mismatch", "duplicate", "create-failed", "wrong-vault"]:
             with self.subTest(mode=mode):
                 os.environ["FAKE_OP_MODE"] = mode
                 rc, out = self.put("synthetic-pw\n")
@@ -133,7 +166,7 @@ class OnePasswordBackendTest(MemoryUseTest):
         (self.root / "nas" / "p.md").write_text(ARTICLE_OK + f"\n🔑 op://Private/{ROUTER}（router）\n🔑 op://Private/missing0000000000000000000\n")
         rc, out = self.run_cmd("secret", "refs")
         self.assertEqual(rc, 1)
-        self.assertIn("op:missing0000000000000000000 not found in 1Password", out)
+        self.assertIn("op://Private/missing0000000000000000000 not found in 1Password", out)
         self.assertNotIn(ROUTER, out)
 
     def test_refs_and_lint_skip_quietly_when_signed_out(self):

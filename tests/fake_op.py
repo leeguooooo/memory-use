@@ -24,6 +24,9 @@ def meta(i):
     return out
 
 
+if mode == "leaky-error" and args[:2] == ["item", "get"]:
+    sys.stderr.write("[ERROR] unexpected value s3cret-router-pw\n")
+    sys.exit(1)
 if args[:1] == ["whoami"]:
     sys.exit(1 if mode == "signed-out" else 0)
 if mode == "signed-out":
@@ -45,7 +48,7 @@ elif args[:2] == ["item", "get"]:
     print(json.dumps(item))
 elif args[:2] == ["item", "create"] and args[-1] == "-":
     t = json.loads(stdin)
-    vault = flag("--vault") or "Private"
+    vault = "Other" if mode == "wrong-vault" else flag("--vault") or "Private"
     item = {"id": "n%025d" % len(items), "title": t["title"], "category": t["category"],
             "vault": {"id": "v" + vault.lower(), "name": vault}, "tags": (flag("--tags") or "").split(","),
             "fields": t["fields"]}
