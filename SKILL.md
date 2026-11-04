@@ -1,6 +1,6 @@
 ---
 name: memory-use
-description: Read and maintain the user's portable long-term memory — a private git repo of Markdown notes (NAS, VPN, servers, home/office network, infra decisions, new-computer setup) that follows them across AI sessions and computers. Use when the user says 记一下 / 记住 / 存到记忆 / 更新笔记 / 查一下记忆 / 我们之前怎么弄的 / 上次那个… / 换电脑 / 新电脑, "remember this", "how did we set this up", asks about their NAS, VPN, servers or network, or right after finishing infra, network, server or config work that should survive this session. Also for setting the memory up (init), background sync (autosync) and moving to a new computer (migrate). Search, brief, todo, new section, secret-safe save, Bitwarden pointers (secret find/put/get), dated reminders into Apple Reminders (remind add/ls). Not for personal data (address, IDs, bank cards, family) — that is profile-use; notes only point to it.
+description: Read and maintain the user's portable long-term memory — a private git repo of Markdown notes (NAS, VPN, servers, home/office network, infra decisions, new-computer setup) that follows them across AI sessions and computers. Use when the user says 记一下 / 记住 / 存到记忆 / 更新笔记 / 查一下记忆 / 我们之前怎么弄的 / 上次那个… / 换电脑 / 新电脑, "remember this", "how did we set this up", asks about their NAS, VPN, servers or network, or right after finishing infra, network, server or config work that should survive this session. Also for setting the memory up (init), background sync (autosync) and moving to a new computer (migrate). Search, brief, todo, new section, secret-safe save, password-manager pointers to 1Password or Bitwarden (secret find/put/get), dated reminders into Apple Reminders (remind add/ls). Not for personal data (address, IDs, bank cards, family) — that is profile-use; notes only point to it.
 ---
 
 # memory-use
@@ -23,7 +23,7 @@ python3 $M eval              # hit@1 / hit@3 of search over evals.md, glossary �
 python3 $M lessons           # topics failed commands keep hitting across sessions; "rewrite this note" = pointed at, never fixed
 python3 $M check [paths]     # secret scan (also the git pre-commit hook)
 python3 $M save vpn/servers.md vpn/todo.md -m "vpn: …" --trailer "Claude-Session: …"
-python3 $M secret find|put|get|refs|hashes …      # Bitwarden pointers via bitwarden-use (optional)
+python3 $M secret find|put|get|refs|hashes|backend …   # password-manager pointers: 1Password (op) or Bitwarden (bitwarden-use), optional
 python3 $M remind add "续费 NAS 证书" --due 2026-10-01   # dated reminder → Apple Reminders (macOS, optional)
 ```
 
@@ -74,7 +74,7 @@ Write back whenever the work produced something a future session needs: a new se
 
 1. Put it in the right section (`new` if none fits). Prefer updating an existing article; keep the section README's article list and troubleshooting table current.
 2. Follow the notes repo's `AGENTS.md`. The usual rules:
-   - **Never write passwords, private keys, tokens, cookies** — only where they live ("in `secrets.env` on the server", `🔑 bw:<uuid>`).
+   - **Never write passwords, private keys, tokens, cookies** — only where they live ("in `secrets.env` on the server", `🔑 op://<vault>/<item id>` or `🔑 bw:<uuid>`).
    - Absolute dates (2026-09-15), never "yesterday".
    - Record **why** and **how to roll back**, not just what.
    - Keep the source and verification date clear. Distinguish an observed result, a user-reported fact, and an unexecuted proposal; never rewrite a suggestion as an installed or verified setup.
@@ -101,9 +101,11 @@ Write back whenever the work produced something a future session needs: a new se
 
 ## Secrets
 
-`check` scans every non-binary file for private keys, common vendor tokens, JWTs, SSH public key blobs, credentials in URLs, `Authorization` headers, `mysql -p` / `sshpass -p`, and assignments in English or Chinese (`password=…`, `密码：…`, `密码是 …`, `口令 = …`); pointers, paths and prose (`bw:…`, `~/.ssh/…`, `secrets.env`, `不记录，问 X`) pass. Real secrets listed one per line in `~/.config/memory-use/known-secrets` (outside git, chmod 600) are caught verbatim; with bitwarden-use, `secret hashes` catches every password in the vault's `memory` folder by hash. The pre-commit hook blocks any commit, even one made with plain git.
+`check` scans every non-binary file for private keys, common vendor tokens, JWTs, SSH public key blobs, credentials in URLs, `Authorization` headers, `mysql -p` / `sshpass -p`, and assignments in English or Chinese (`password=…`, `密码：…`, `密码是 …`, `口令 = …`); pointers, paths and prose (`op://…`, `bw:…`, `~/.ssh/…`, `secrets.env`, `不记录，问 X`) pass. Real secrets listed one per line in `~/.config/memory-use/known-secrets` (outside git, chmod 600) are caught verbatim; `secret hashes` catches by hash every password in the `memory` folder (Bitwarden) or in items tagged `memory`, also nested like `imported/memory` (1Password). The pre-commit hook blocks any commit, even one made with plain git.
 
-`secret put "<name>"` accepts a single-line password on stdin, or `--generate 24`, and reports a `🔑 bw:<uuid>` pointer only after checking the new item and exact readback. Multiline secrets and private-key blocks are refused before writing; use `bwu item put` with native SSH-key or secure-note JSON. If verification fails, the item may already exist: inspect it before retrying rather than creating another copy. `secret get bw:<uuid> --copy` or `--env VAR -- cmd` uses a value without printing.
+Backend: `secret backend 1password|bitwarden` (saved in config; `MEMORY_USE_SECRET_BACKEND` overrides). Unset, it uses whichever CLI is installed, Bitwarden when both are. 1Password goes through the official `op` CLI; `MEMORY_USE_OP_VAULT` / config `op_vault` picks the vault for new items (default: op's own), `MEMORY_USE_SECRET_TAG` the tag (default `memory`). `bw:` pointers keep resolving through bitwarden-use whatever the backend.
+
+`secret put "<name>"` accepts a single-line password on stdin, or `--generate 24`, and reports a `🔑 op://<vault>/<item id>` (or `🔑 bw:<uuid>`) pointer only after checking the new item and exact readback; the value reaches the CLI on stdin, never in arguments. Multiline secrets and private-key blocks are refused before writing; store them as a secure-note or SSH-key item in the password manager. If verification fails, the item may already exist: inspect it before retrying rather than creating another copy. `secret get <pointer> --copy` or `--env VAR -- cmd` uses a value without printing; `op://<vault>/<item>/<field>` or `--field username|notes|totp|<label>` picks another field. With 1Password app integration, the first `find` / `get` in a session asks for the user's approval (Touch ID); `refs` and `lint` never prompt and skip the check while signed out.
 
 ## Dates, reminders, birthdays
 
