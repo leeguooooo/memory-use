@@ -37,7 +37,7 @@ STATE_DIR = Path(os.environ.get("MEMORY_USE_STATE_DIR", Path.home() / ".local" /
 KNOWN_SECRETS = Path(os.environ.get("MEMORY_USE_SECRETS", CONFIG_DIR / "known-secrets"))
 KNOWN_HASHES = Path(os.environ.get("MEMORY_USE_SECRET_HASHES", CONFIG_DIR / "known-secret-hashes"))
 SECRET_FOLDER = os.environ.get("MEMORY_USE_SECRET_FOLDER", "memory")
-POINTER = re.compile(r"\bbw:([0-9a-fA-F-]{36})")
+BW_POINTER = re.compile(r"\bbw:([0-9a-fA-F-]{36})")
 SKIP_DIRS = {".git", "skill", "archive"}   # not searched / linted as notes (archive is searchable with --all)
 STALE_DAYS = 120
 README_MAX_LINES = 70
@@ -510,7 +510,21 @@ def staged_blobs(root: Path) -> list[tuple[str, str]]:
     return out
 
 
-# ---------------------------------------------------------------- bitwarden-use (vault) bridge
+# ---------------------------------------------------------------- password-manager bridge (bitwarden-use | 1Password op)
+# Notes only ever hold a pointer: `bw:<uuid>` (Bitwarden) or `op://<vault>/<item id>[/<field>]` (1Password).
+# Values stay in memory or go to a child process; nothing here prints them unless `get --print` was asked for.
+
+BACKENDS = ("1password", "bitwarden")
+
+
+def secret_backend() -> str:
+    """MEMORY_USE_SECRET_BACKEND, else `secret backend <name>` (config), else whichever CLI is installed
+    (bitwarden-use when both are, so existing setups keep working until switched)."""
+    b = (os.environ.get("MEMORY_USE_SECRET_BACKEND") or load_config().get("secret_backend") or "").strip().lower()
+    b = {"op": "1password", "bw": "bitwarden", "bwu": "bitwarden"}.get(b, b)
+    if b and b not in BACKENDS:
+        sys.exit(f"unknown secret backend {b!r}: use 1password or bitwarden")
+    return b or ("1password" if op_bin() and not bwu_bin() else "bitwarden")
 
 
 def bwu_bin() -> str | None:
@@ -540,7 +554,6 @@ def vault_unlocked() -> bool:
 
 def vault_items() -> list[dict]:
     """Metadata only (id, name, user, folder, type) — never values."""
-    import json
     r = bwu("list", "--raw")
     if r.returncode:
         sys.exit("bitwarden-use list failed: " + (r.stderr.strip() or r.stdout.strip()))
@@ -551,6 +564,101 @@ def pointer(item: dict) -> str:
     return f"bw:{item['id']}（{item.get('name')}）"
 
 
+OP_VAULT_CHARS = r"[^/\s`'\"<>（）()]+"
+OP_POINTER = re.compile(r"\bop://(" + OP_VAULT_CHARS + r")/([a-z0-9]{26})\b(?:/([\w.-]+))?")
+
+
+def op_bin() -> str | None:
+    return os.environ.get("MEMORY_USE_OP") or shutil.which("op")
+
+
+def op(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
+    b = op_bin()
+    if not b:
+        sys.exit("1Password CLI (op) not installed: https://developer.1password.com/docs/cli/get-started/")
+    if stdin is None:   # never inherit stdin: op treats piped input as a list of items
+        return subprocess.run([b, *args], stdin=subprocess.DEVNULL, text=True, capture_output=True)
+    return subprocess.run([b, *args], input=stdin, text=True, capture_output=True)
+
+
+def op_failure(what: str, r: subprocess.CompletedProcess) -> str:
+    """A fixed message for a failed op call: its own output is never passed on, in case it echoes a value."""
+    err = (r.stderr or "").lower()
+    why = next((msg for keys, msg in (
+        (("authorization prompt dismissed", "authorization timeout"), "the 1Password approval prompt was dismissed or timed out — approve it on this Mac"),
+        (("not signed in", "no accounts configured", "not currently signed in"), "op is not signed in — unlock 1Password (app integration) or set a service-account token"),
+        (("couldn't connect to the 1password desktop app",), "the 1Password app is not running"),
+        (("more than one item matches",), "several items match — use the item id from `secret find`"),
+        (("isn't an item", "not found", "isn't a vault"), "no such item or vault — check with `secret find`")) if any(k in err for k in keys)), "output hidden")
+    return f"{what} failed: {why}"
+
+
+def op_signed_in() -> bool:
+    """`op whoami` does not prompt: with app integration it fails until the user has authorized this session."""
+    return bool(op_bin()) and op("whoami").returncode == 0
+
+
+def op_vault() -> str | None:
+    """Vault for new items; unset means op's default (the account's personal vault with app integration)."""
+    return os.environ.get("MEMORY_USE_OP_VAULT") or load_config().get("op_vault") or None
+
+
+def secret_tag() -> str:
+    """1Password has tags, not folders: new items get this tag; `hashes` reads items tagged with it,
+    also nested under a parent tag (`imported/memory`), which is how app imports keep folder names."""
+    return os.environ.get("MEMORY_USE_SECRET_TAG") or SECRET_FOLDER
+
+
+def has_secret_tag(item: dict) -> bool:
+    t = secret_tag().lower()
+    return any(x.lower() == t or x.lower().endswith("/" + t) for x in item.get("tags") or [])
+
+
+def op_items() -> list[dict]:
+    """Metadata only (id, name, user, vault, tags, type) — never values."""
+    r = op("item", "list", "--format", "json")
+    if r.returncode:
+        sys.exit(op_failure("op item list", r))
+    out = []
+    for i in json.loads(r.stdout or "[]"):
+        v = i.get("vault") or {}
+        out.append({"id": i.get("id"), "name": i.get("title"), "type": i.get("category"), "tags": i.get("tags") or [], "vault_id": v.get("id"),
+                    # additional_information is the username only for logins; elsewhere it can be a note excerpt
+                    "user": (i.get("additional_information") or None) if i.get("category") == "LOGIN" else None,
+                    "vault": v.get("name") if re.fullmatch(OP_VAULT_CHARS, v.get("name") or "") else v.get("id")})
+    return out
+
+
+def op_pointer(item: dict) -> str:
+    return f"op://{item['vault']}/{item['id']}（{item.get('name')}）"
+
+
+def op_item(ref: str, vault: str | None = None) -> dict:
+    r = op("item", "get", ref, "--reveal", "--format", "json", *(["--vault", vault] if vault else []))
+    if r.returncode:
+        sys.exit(op_failure("op item get", r))
+    return json.loads(r.stdout)
+
+
+def op_field(item: dict, name: str) -> str:
+    """`name` as with bitwarden-use: password, username, notes, totp, custom:<label>, or a field label / id."""
+    custom = name.startswith("custom:")
+    want = (name[len("custom:"):] if custom else name).lower()
+    fields = item.get("fields") or []
+    labelled = [f for f in fields if want in ((f.get("id") or "").lower(), (f.get("label") or "").lower())]
+    if custom:   # only a field of that label / id, never the built-in password, username or one-time code
+        labelled = [f for f in labelled if not f.get("purpose") and f.get("type") != "OTP"]
+        if len(labelled) > 1:
+            sys.exit(f"{len(labelled)} fields are labelled {want!r} in that item; use the field id")
+    purpose = None if custom else {"password": "PASSWORD", "username": "USERNAME", "notes": "NOTES"}.get(want)
+    hit = next((f for f in fields if not custom and want in ("totp", "otp") and f.get("type") == "OTP"), None) \
+        or next((f for f in fields if purpose and f.get("purpose") == purpose), None) \
+        or next(iter(labelled), None)
+    if not hit:
+        sys.exit(f"no field {name!r} in that item; fields: " + ", ".join(f.get("label") or f.get("id") or "?" for f in fields))
+    return (hit.get("totp") if hit.get("type") == "OTP" else hit.get("value")) or ""
+
+
 def single_line_secret(text: str) -> str:
     """Accept one optional terminal line ending, never discard additional lines."""
     value = text[:-2] if text.endswith("\r\n") else text[:-1] if text.endswith("\n") else text
@@ -558,16 +666,125 @@ def single_line_secret(text: str) -> str:
         sys.exit("no value on stdin")
     if "\n" in value or "\r" in value or re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----", value):
         sys.exit("multiline secrets and private-key blocks are not supported by secret put; nothing was written. "
-                 "Use `bwu item put` with a native SSH-key or secure-note JSON item instead.")
+                 "Store them as a secure note or SSH-key item in the password manager instead.")
     return value
 
 
+PUT_UNCERTAIN = ("vault write was not verified; it may already exist. Inspect the named item before retrying. "
+                 "No pointer was reported (values hidden).")
+
+
+def generated_password(n: int) -> str:
+    if secret_backend() == "1password":   # op has no standalone generator; draw from op's default alphabet
+        import secrets
+        import string
+        abc = string.ascii_letters + string.digits + "!@.-_*"
+        return "".join(secrets.choice(abc) for _ in range(n))
+    generated = bwu("generate", str(n))  # no name: generate in memory, without a vault write
+    if generated.returncode:
+        sys.exit("password generation failed (values hidden); nothing was written")
+    return single_line_secret(generated.stdout)
+
+
+def bw_put(name: str, user: str | None, value: str) -> str:
+    if bwu("sync").returncode:
+        sys.exit("vault sync failed before writing; nothing was written")
+    before = {i["id"] for i in vault_items()}
+    r = bwu_confirmed("add", name, *([user] if user else []), "--folder", SECRET_FOLDER, stdin=value + "\n")
+    if r.returncode:
+        sys.exit(PUT_UNCERTAIN)
+    if bwu("sync").returncode:
+        sys.exit(PUT_UNCERTAIN)
+    try:
+        after = vault_items()
+    except SystemExit:
+        sys.exit(PUT_UNCERTAIN)
+    new = [i for i in after if i["id"] not in before and i.get("name") == name
+           and (i.get("folder") or "") == SECRET_FOLDER and (user is None or i.get("user") == user)]
+    if len(new) != 1:
+        sys.exit(PUT_UNCERTAIN)
+    readback = bwu("get", new[0]["id"], "--field", "password", "--reveal")
+    # The CLI adds one output line ending. Compare exact UTF-8 bytes in
+    # memory, without exposing either value or automatically replaying writes.
+    import hmac
+    actual = readback.stdout[:-2] if readback.stdout.endswith("\r\n") else readback.stdout[:-1] if readback.stdout.endswith("\n") else readback.stdout
+    if readback.returncode or not hmac.compare_digest(actual.encode(), value.encode()):
+        sys.exit(PUT_UNCERTAIN)
+    return "stored in Bitwarden folder '" + SECRET_FOLDER + "' and read-back verified. Put this in the note:\n  🔑 " + pointer(new[0])
+
+
+def op_put(name: str, user: str | None, value: str) -> str:
+    before = {i["id"] for i in op_items()}
+    vault = op_vault()
+    template = {"title": name, "category": "LOGIN", "fields": [
+        {"id": "username", "type": "STRING", "purpose": "USERNAME", "label": "username", "value": user or ""},
+        {"id": "password", "type": "CONCEALED", "purpose": "PASSWORD", "label": "password", "value": value}]}
+    # The value travels in the JSON template on stdin, never in argv; op's output (it echoes fields) is discarded.
+    r = op("item", "create", "--format", "json", "--tags", secret_tag(), *(["--vault", vault] if vault else []), "-",
+           stdin=json.dumps(template))
+    try:
+        created = json.loads(r.stdout).get("id") if not r.returncode else None
+    except ValueError:
+        created = None
+    if not created:
+        sys.exit(PUT_UNCERTAIN)
+    try:
+        after = op_items()
+    except SystemExit:
+        sys.exit(PUT_UNCERTAIN)
+    new = [i for i in after if i["id"] not in before and i.get("name") == name and has_secret_tag(i)
+           and (user is None or i.get("user") == user) and (vault is None or vault in (i.get("vault"), i.get("vault_id")))]
+    # exactly one new matching item, and it is the one op says it created
+    if len(new) != 1 or new[0]["id"] != created:
+        sys.exit(PUT_UNCERTAIN)
+    import hmac
+    try:
+        actual = op_field(op_item(created, new[0]["vault_id"]), "password")
+    except SystemExit:
+        sys.exit(PUT_UNCERTAIN)
+    if not hmac.compare_digest(actual.encode(), value.encode()):
+        sys.exit(PUT_UNCERTAIN)
+    return (f"stored in 1Password vault '{new[0]['vault']}' (tag '{secret_tag()}') and read-back verified. "
+            "Put this in the note:\n  🔑 " + op_pointer(new[0]))
+
+
+def secret_value(ref: str, field: str | None) -> str:
+    """Resolve a pointer (`op://…`, `bw:…`) or a bare name / id on the configured backend."""
+    if ref.startswith("op://"):
+        vault, _, rest = ref[5:].partition("/")
+        item, _, ref_field = rest.partition("/")
+        if not vault or not item:
+            sys.exit("op pointer must look like op://<vault>/<item>[/<field>]")
+        return op_field(op_item(item, vault), field or ref_field or "password")
+    if ref.startswith("bw:") or secret_backend() == "bitwarden":
+        r = bwu("get", ref[3:] if ref.startswith("bw:") else ref, "--field", field or "password", "--reveal")
+        if r.returncode:
+            sys.exit("bitwarden-use get failed (output hidden): check the pointer with `secret find`, or unlock the vault")
+        return r.stdout.rstrip("\n")
+    return op_field(op_item(ref), field or "password")
+
+
 def cmd_secret(a) -> int:
+    if a.action == "backend":
+        if a.args:
+            b = {"op": "1password", "bw": "bitwarden", "bwu": "bitwarden"}.get(a.args[0].lower(), a.args[0].lower())
+            if b not in BACKENDS:
+                sys.exit("usage: secret backend [1password|bitwarden]")
+            save_config(secret_backend=b)
+        print(f"secret backend: {secret_backend()}")
+        return 0
+    backend = secret_backend()
     if a.action == "find":
         terms = [t.lower() for t in a.args]
-        hits = [i for i in vault_items() if all(t in " ".join(str(i.get(k) or "") for k in ("name", "user", "folder")).lower() for t in terms)]
+        if backend == "1password":
+            keys, items, show = ("name", "user", "vault", "tags"), op_items(), \
+                lambda i: f"{op_pointer(i)}  vault={i.get('vault')}  tags={','.join(i.get('tags')) or '-'}  user={'yes' if i.get('user') else '-'}"
+        else:
+            keys, items, show = ("name", "user", "folder"), vault_items(), \
+                lambda i: f"{pointer(i)}  folder={i.get('folder') or '-'}  user={'yes' if i.get('user') else '-'}"
+        hits = [i for i in items if all(t in " ".join(str(i.get(k) or "") for k in keys).lower() for t in terms)]
         for i in hits[:30]:
-            print(f"{pointer(i)}  folder={i.get('folder') or '-'}  user={'yes' if i.get('user') else '-'}")
+            print(show(i))
         if not hits:
             print("no vault item matches")
         return 0 if hits else 1
@@ -578,49 +795,17 @@ def cmd_secret(a) -> int:
         if a.generate is not None:
             if a.generate < 1:
                 sys.exit("--generate must be positive")
-            generated = bwu("generate", str(a.generate))  # no name: generate in memory, without a vault write
-            if generated.returncode:
-                sys.exit("password generation failed (values hidden); nothing was written")
-            value = single_line_secret(generated.stdout)
+            value = generated_password(a.generate)
             if len(value) != a.generate:
                 sys.exit("generated password length did not match; nothing was written")
         else:
             value = single_line_secret(sys.stdin.read())
-        if bwu("sync").returncode:
-            sys.exit("vault sync failed before writing; nothing was written")
-        before = {i["id"] for i in vault_items()}
-        r = bwu_confirmed("add", name, *([user] if user else []), "--folder", SECRET_FOLDER, stdin=value + "\n")
-        uncertain = ("vault write was not verified; it may already exist. Inspect the named item before retrying. "
-                     "No pointer was reported (values hidden).")
-        if r.returncode:
-            sys.exit(uncertain)
-        if bwu("sync").returncode:
-            sys.exit(uncertain)
-        try:
-            after = vault_items()
-        except SystemExit:
-            sys.exit(uncertain)
-        new = [i for i in after if i["id"] not in before and i.get("name") == name
-               and (i.get("folder") or "") == SECRET_FOLDER and (user is None or i.get("user") == user)]
-        if len(new) != 1:
-            sys.exit(uncertain)
-        readback = bwu("get", new[0]["id"], "--field", "password", "--reveal")
-        # The CLI adds one output line ending. Compare exact UTF-8 bytes in
-        # memory, without exposing either value or automatically replaying writes.
-        import hmac
-        actual = readback.stdout[:-2] if readback.stdout.endswith("\r\n") else readback.stdout[:-1] if readback.stdout.endswith("\n") else readback.stdout
-        if readback.returncode or not hmac.compare_digest(actual.encode(), value.encode()):
-            sys.exit(uncertain)
-        print("stored in Bitwarden folder '" + SECRET_FOLDER + "' and read-back verified. Put this in the note:\n  🔑 " + pointer(new[0]))
+        print((op_put if backend == "1password" else bw_put)(name, user, value))
         return 0
     if a.action == "get":
         if not a.args:
-            sys.exit("usage: secret get <bw:uuid | uuid | name> [--field F] (--copy | --env VAR -- cmd … | --print)")
-        ref = a.args[0][3:] if a.args[0].startswith("bw:") else a.args[0]
-        r = bwu("get", ref, "--field", a.field, "--reveal")
-        if r.returncode:
-            sys.exit("bitwarden-use get failed: " + (r.stderr.strip() or r.stdout.strip()))
-        value = r.stdout.rstrip("\n")
+            sys.exit("usage: secret get <op://vault/item[/field] | bw:uuid | name> [--field F] (--copy | --env VAR -- cmd … | --print)")
+        value = secret_value(a.args[0], a.field)
         if a.env:
             if not a.cmd:
                 sys.exit("--env needs a command after --")
@@ -638,36 +823,58 @@ def cmd_secret(a) -> int:
         return check_pointers(verbose=True)
     if a.action == "hashes":
         import hashlib
-        items = [i for i in vault_items() if (i.get("folder") or "").lower() == SECRET_FOLDER.lower()]
         out = []
-        for i in items:
-            r = bwu("get", i["id"], "--field", "password", "--reveal")
-            if r.returncode == 0 and len(r.stdout.strip()) >= 6:
-                out.append(hashlib.sha256(r.stdout.strip().encode()).hexdigest())
+        if backend == "1password":
+            where = f"1Password items tagged '{secret_tag()}'"
+            for i in [i for i in op_items() if has_secret_tag(i)]:
+                for f in op_item(i["id"]).get("fields") or []:
+                    v = (f.get("value") or "").strip()
+                    if (f.get("purpose") == "PASSWORD" or f.get("type") == "CONCEALED") and len(v) >= 6:
+                        out.append(hashlib.sha256(v.encode()).hexdigest())
+        else:
+            where = f"folder '{SECRET_FOLDER}'"
+            for i in [i for i in vault_items() if (i.get("folder") or "").lower() == SECRET_FOLDER.lower()]:
+                r = bwu("get", i["id"], "--field", "password", "--reveal")
+                if r.returncode == 0 and len(r.stdout.strip()) >= 6:
+                    out.append(hashlib.sha256(r.stdout.strip().encode()).hexdigest())
         KNOWN_HASHES.parent.mkdir(parents=True, exist_ok=True)
         KNOWN_HASHES.write_text("\n".join(sorted(set(out))) + ("\n" if out else ""), encoding="utf-8")
         os.chmod(KNOWN_HASHES, 0o600)
-        print(f"{len(set(out))} secret hash(es) from folder '{SECRET_FOLDER}' → {KNOWN_HASHES} (values never stored)")
+        print(f"{len(set(out))} secret hash(es) from {where} → {KNOWN_HASHES} (values never stored)")
         return 0
     sys.exit("unknown secret action")
 
 
 def check_pointers(verbose: bool = False) -> int:
+    """Every `bw:` / `op://` pointer in the notes must name an existing item. A locked or
+    signed-out manager is skipped quietly (lint runs this; it must never trigger a prompt)."""
     d = need_repo()
-    refs = [(p.relative_to(d).as_posix(), n, m.group(1)) for p in md_files(d) for n, l in enumerate(p.read_text(encoding="utf-8", errors="ignore").splitlines(), 1) for m in POINTER.finditer(l)]
-    if not refs:
+    refs: dict[str, list] = {"bw": [], "op": []}
+    for p in md_files(d):
+        for n, l in enumerate(p.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+            refs["bw"] += [(p.relative_to(d).as_posix(), n, m.group(1)) for m in BW_POINTER.finditer(l)]
+            refs["op"] += [(p.relative_to(d).as_posix(), n, f"{m.group(1)}/{m.group(2)}") for m in OP_POINTER.finditer(l)]
+    if not refs["bw"] and not refs["op"]:
         if verbose:
-            print("no bw: pointers in notes")
+            print("no password-manager pointers in notes")
         return 0
-    if not vault_unlocked():
-        print(f"{len(refs)} bw: pointer(s) not checked — vault is locked (unlock it to verify)")
-        return 0
-    ids = {i["id"] for i in vault_items()}
-    bad = [(f, n, u) for f, n, u in refs if u not in ids]
-    for f, n, u in bad:
-        print(f"WARN {f}:{n}: bw:{u} not found in the vault")
-    if verbose and not bad:
-        print(f"{len(refs)} bw: pointer(s) OK")
+    bad = 0
+    for kind, label, ready, items in (("bw", "Bitwarden", vault_unlocked, vault_items), ("op", "1Password", op_signed_in, op_items)):
+        if not refs[kind]:
+            continue
+        if not ready():
+            if verbose:
+                print(f"{len(refs[kind])} {kind} pointer(s) not checked — {label} is locked or not signed in (unlock it to verify)")
+            continue
+        # an op pointer must name the item's vault too (by name or id), or `secret get` cannot follow it
+        ids = {i["id"] for i in items()} if kind == "bw" else \
+            {f"{v}/{i['id']}" for i in items() for v in (i.get("vault"), i.get("vault_id")) if v}
+        missing = [(f, n, u) for f, n, u in refs[kind] if u not in ids]
+        for f, n, u in missing:
+            print(f"WARN {f}:{n}: {'bw:' if kind == 'bw' else 'op://'}{u} not found in {label}")
+        if verbose and not missing:
+            print(f"{len(refs[kind])} {kind} pointer(s) OK")
+        bad += len(missing)
     return 1 if bad else 0
 
 
@@ -1437,7 +1644,7 @@ def cmd_migrate(a) -> int:
     print("\n## stays on this computer (by design, outside git)")
     n_known = len(load_known_secrets())
     print(f"  - {KNOWN_SECRETS}: {n_known} literal secret(s) for leak detection — move them into your password manager, "
-          "not a file copy; with bitwarden-use run `secret hashes` on the new computer instead")
+          "not a file copy; with a password-manager backend run `secret hashes` on the new computer instead")
     if KNOWN_HASHES.exists():
         print(f"  - {KNOWN_HASHES}: rebuilt on the new computer by `secret hashes`")
     agent_mem = sorted((Path.home() / ".claude" / "projects").glob("*/memory/*.md"))
@@ -2669,9 +2876,8 @@ def cmd_lint(a) -> int:
             if GATEWAY_IP.fullmatch(alias):
                 warns.append(f"glossary.md: router address `{alias}` as an alias of {g[0]} — every site has one; "
                              "mention it in the description instead")
-    if bwu_bin() and vault_unlocked():
-        if check_pointers() != 0:
-            warns.append("some bw: pointers do not resolve (see above)")
+    if check_pointers() != 0:
+        warns.append("some password-manager pointers do not resolve (see above)")
     if warns:
         print("\n".join("WARN " + w for w in warns))
         print(f"\n{len(warns)} warning(s)")
@@ -2878,10 +3084,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("paths", nargs="+"); s.add_argument("-m", "--message", required=True); s.add_argument("--trailer", default=os.environ.get("MEMORY_USE_TRAILER", ""))
     s.add_argument("--no-push", action="store_true", help="commit locally only; autosync or `sync` pushes later")
     s.set_defaults(fn=cmd_save)
-    s = sub.add_parser("secret", help="Bitwarden pointers: find | put | get | refs | hashes (values never printed by default)")
-    s.add_argument("action", choices=["find", "put", "get", "refs", "hashes"])
+    s = sub.add_parser("secret", help="password-manager pointers (1Password or Bitwarden): find | put | get | refs | hashes | backend (values never printed by default)")
+    s.add_argument("action", choices=["find", "put", "get", "refs", "hashes", "backend"])
     s.add_argument("args", nargs="*")
-    s.add_argument("--field", default="password")
+    s.add_argument("--field", help="get: password (default, or the pointer's field), username, notes, totp, or a field label")
     s.add_argument("--generate", type=int, metavar="N", help="put: generate an N-char password instead of reading stdin")
     s.add_argument("--copy", action="store_true", help="get: copy to clipboard, cleared after 30 s")
     s.add_argument("--env", metavar="VAR", help="get: run the command after -- with the secret in $VAR")

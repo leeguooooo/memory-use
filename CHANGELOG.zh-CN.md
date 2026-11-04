@@ -2,6 +2,10 @@
 
 [English](CHANGELOG.md) | **中文**
 
+## 未发布
+
+- `secret` 支持 1Password（官方 `op` 命令行）：`op://<库>/<条目 id>` 指针，密码只走标准输入并逐字回读核对，`hashes` 按标签收集（含嵌套标签），用 `secret backend 1password|bitwarden` 切换。Bitwarden 仍可用，`bw:` 指针照常解析。`refs` / `lint` 不会触发授权弹窗。
+
 ## 0.5.6
 
 - 自动同步会提交静置满 2 小时且通过密钥扫描的改动，写完的笔记不再一直留在本地。

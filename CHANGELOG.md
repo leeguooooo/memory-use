@@ -2,6 +2,10 @@
 
 **English** | [中文](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- `secret` supports 1Password through the official `op` CLI: `op://<vault>/<item id>` pointers, stdin-only writes with exact readback, tag-based `hashes` (nested tags included), and `secret backend 1password|bitwarden` to switch. Bitwarden stays available and `bw:` pointers keep resolving. `refs` / `lint` never trigger an approval prompt.
+
 ## 0.5.6
 
 - Autosync now commits edits that have sat untouched for 2 hours and pass the secret scan, so finished notes no longer stay uncommitted.
