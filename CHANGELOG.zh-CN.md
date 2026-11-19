@@ -2,6 +2,10 @@
 
 [English](CHANGELOG.md) | **中文**
 
+## 未发布
+
+- 实验性：`secret` 可以用 1Password（官方 `op` 命令行）：`op://<库>/<条目 id>` 指针，密码只走标准输入并逐字回读核对，`hashes` 按标签收集（含嵌套标签）。`put` 和 `hashes` 只在测试替身上跑过，没有在真实 1Password 账号上验证。默认仍是 Bitwarden，不会自动切换：用 `secret backend 1password` 或 `MEMORY_USE_SECRET_BACKEND` 才启用 1Password。`bw:` 指针照常解析，`refs` / `lint` 不会触发授权弹窗，`secret hashes` 不会覆盖另一个后端生成的哈希文件。
+
 ## 0.5.6
 
 - 自动同步会提交静置满 2 小时且通过密钥扫描的改动，写完的笔记不再一直留在本地。

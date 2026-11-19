@@ -2,6 +2,10 @@
 
 **English** | [中文](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- Experimental: `secret` can use 1Password through the official `op` CLI: `op://<vault>/<item id>` pointers, stdin-only writes with exact readback, tag-based `hashes` (nested tags included). `put` and `hashes` have only run against a test double, not a real 1Password account. Bitwarden stays the default and is never switched away from automatically: choose 1Password with `secret backend 1password` or `MEMORY_USE_SECRET_BACKEND`. `bw:` pointers keep resolving, `refs` / `lint` never trigger an approval prompt, and `secret hashes` refuses to replace a hash file built from the other backend.
+
 ## 0.5.6
 
 - Autosync now commits edits that have sat untouched for 2 hours and pass the secret scan, so finished notes no longer stay uncommitted.

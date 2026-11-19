@@ -33,7 +33,7 @@ or nickname → one line in [glossary.md](glossary.md) so search finds it by any
 
 ## Secrets and personal data: pointers only
 
-- Passwords, tokens, keys: in a password manager; the note says where (`🔑 bw:<uuid>` with bitwarden-use).
+- Passwords, tokens, keys: in a password manager; the note says where (`🔑 op://<vault>/<item id>` with 1Password, `🔑 bw:<uuid>` with bitwarden-use).
 - Personal data (address, IDs, family): in profile-use; the note says `profile-use: <dotpath>`.
 - The pre-commit hook blocks anything that looks like a secret.
 

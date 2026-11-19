@@ -13,7 +13,7 @@ Long-term notes that outlive any single AI session or computer. Agents read them
 
 ## Conventions
 
-- **No passwords, keys, tokens or cookies.** Write where they live ("in `app.env` on the server", or a `bw:<uuid>` pointer).
+- **No passwords, keys, tokens or cookies.** Write where they live ("in `app.env` on the server", or a pointer such as `op://<vault>/<item id>` or `bw:<uuid>`).
 - Absolute dates (2026-09-15), never "yesterday".
 - Record why and how to roll back, not just what.
 - One directory per section; its `README.md` is the entry point, open items go in its `todo.md`.

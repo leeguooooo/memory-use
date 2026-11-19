@@ -29,7 +29,9 @@ def sh(*args, cwd):
 ARTICLE_OK = "# Lucky\n\n> 更新：2026-09-15 · 状态：在用\n\n**要点**\n- Lucky 在 443\n\n## 细节\n\n反代规则\n"
 
 
-class MemoryUseTest(unittest.TestCase):
+class MemoryUseCase(unittest.TestCase):
+    """Fixture only (a small notes repo, run_cmd): subclass this, not MemoryUseTest, to avoid re-running its tests."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name) / "repo"
@@ -63,6 +65,8 @@ class MemoryUseTest(unittest.TestCase):
                 rc = e.code
         return rc, buf.getvalue()
 
+
+class MemoryUseTest(MemoryUseCase):
     def test_search_ranks_sections_with_heading_trail(self):
         rc, out = self.run_cmd("search", "lucky", "443")
         self.assertEqual(rc, 0)
